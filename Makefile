@@ -29,7 +29,7 @@ check: fmt-check tidy-check vet test
 build:
 	@mkdir -p dist
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -trimpath -buildvcs=false -ldflags "$(LDFLAGS)" -o dist/fleetguard-agent ./cmd/fleetguard-agent
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -trimpath -buildvcs=false -ldflags "$(LDFLAGS)" -o dist/fleetguard-controller ./cmd/fleetguard-controller
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 $(GO) build -trimpath -buildvcs=false -ldflags "$(LDFLAGS)" -o dist/fleetguard-controller ./cmd/fleetguard-controller
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -trimpath -buildvcs=false -ldflags "$(LDFLAGS)" -o dist/fleetguardctl ./cmd/fleetguardctl
 
 smoke:

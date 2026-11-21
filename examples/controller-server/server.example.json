@@ -1,0 +1,10 @@
+{
+  "mode": "observe",
+  "listen": "127.0.0.1:9443",
+  "tls_cert_file": "/replace/with/private/lab/tls.crt",
+  "tls_key_file": "/replace/with/private/lab/tls.key",
+  "database_file": "/replace/with/private/lab/evidence.sqlite",
+  "registry_file": "/replace/with/private/lab/registry.json",
+  "signing_key_file": "/replace/with/private/lab/signing.key",
+  "signing_key_id": "lab-signer-v1"
+}

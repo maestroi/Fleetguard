@@ -24,6 +24,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false # no external Go dependencies yet, and no go.sum
+      - name: Install SQLite C headers (controller only)
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
       - name: Format check
         run: make fmt-check
       - name: Check module metadata
@@ -34,6 +36,8 @@ jobs:
         run: go test -count=1 ./pkg/protocol
       - name: Rootless simulated sensor, firewall and partition tests
         run: go test -count=1 ./internal/firewall/mock ./internal/sensor/synthetic ./internal/lab
+      - name: Controller auth / SQLite / HTTPS regression tests
+        run: go test -count=1 ./internal/controller/... ./pkg/protocol
       - name: Unit tests (race detector)
         run: go test -race ./...
       - name: Build Linux amd64 binaries

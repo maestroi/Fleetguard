@@ -235,3 +235,17 @@ func Reason(err error) ReasonCode {
 	}
 	return ReasonMalformed
 }
+
+// DecodeAcknowledgement rejects duplicate, unknown and oversized JSON fields
+// before validating an agent-reported state. Transport identity is checked by
+// the controller separately; the JSON node_id is not an authority.
+func DecodeAcknowledgement(data []byte) (Acknowledgement, error) {
+	var a Acknowledgement
+	if err := decodeJSON(data, 4<<10, &a); err != nil {
+		return Acknowledgement{}, err
+	}
+	if err := ValidateAcknowledgement(a); err != nil {
+		return Acknowledgement{}, err
+	}
+	return a, nil
+}

@@ -1,10 +1,18 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/maestroi/Fleetguard/internal/lab"
@@ -14,7 +22,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: fleetguardctl version | check-config -kind agent|controller -config FILE | simulate [-a FILE] [-b FILE] [-at RFC3339]")
+	fmt.Fprintln(os.Stderr, "usage: fleetguardctl version | check-config -kind agent|controller -config FILE | simulate [-a FILE] [-b FILE] [-at RFC3339] | hash-token (stdin) | generate-signing-key -private FILE -public FILE")
 }
 
 func main() {
@@ -23,6 +31,68 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+	case "hash-token":
+		if len(os.Args) != 2 {
+			usage()
+			os.Exit(2)
+		}
+		token, err := io.ReadAll(io.LimitReader(os.Stdin, 258))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		value := strings.TrimSuffix(string(token), "\n")
+		if len(value) < 32 || len(value) > 256 || strings.ContainsAny(value, "\r\n \t") {
+			fmt.Fprintln(os.Stderr, "token must be 32-256 bytes without whitespace")
+			os.Exit(2)
+		}
+		digest := sha256.Sum256([]byte(value))
+		fmt.Println(hex.EncodeToString(digest[:]))
+	case "generate-signing-key":
+		flags := flag.NewFlagSet("generate-signing-key", flag.ExitOnError)
+		private := flags.String("private", "", "output private Ed25519 key file (0600)")
+		public := flags.String("public", "", "output public Ed25519 key file")
+		flags.Parse(os.Args[2:])
+		if flags.NArg() != 0 || *private == "" || *public == "" || *private == *public {
+			usage()
+			os.Exit(2)
+		}
+		pub, priv, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		if err = os.MkdirAll(filepath.Dir(*private), 0700); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		f, err := os.OpenFile(*private, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		_, err = f.WriteString(base64.StdEncoding.EncodeToString(priv) + "\n")
+		if closeErr := f.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		pubFile, err := os.OpenFile(*public, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		_, err = pubFile.WriteString(base64.StdEncoding.EncodeToString(pub) + "\n")
+		if closeErr := pubFile.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Println("Ed25519 signing key pair generated; private key stays on controller")
 	case "version":
 		if len(os.Args) != 2 {
 			usage()

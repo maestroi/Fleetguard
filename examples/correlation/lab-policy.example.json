@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "mode": "observe",
+  "group": "public-rpc",
+  "window_seconds": 120,
+  "decision_ttl_seconds": 60,
+  "min_nodes": 2,
+  "min_domains": 2,
+  "max_evidence": 512,
+  "max_candidates": 32,
+  "node_domains": {
+    "lab-node-a": "lab-rack-a",
+    "lab-node-b": "lab-rack-b"
+  },
+  "scopes": [
+    {"service": "public-rpc", "observation": "application_abuse", "transport": "tcp", "port": 8899}
+  ],
+  "protected_sources": ["192.0.2.0/24"],
+  "shared_nat_sources": ["198.51.100.0/24"]
+}

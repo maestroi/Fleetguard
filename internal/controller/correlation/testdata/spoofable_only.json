@@ -1,0 +1,36 @@
+[
+  {
+    "schema": 1,
+    "event_id": "spoofable_only-a",
+    "node_id": "a",
+    "dedup_key": "spoofable_only-a-dedup",
+    "observed_at": "2026-11-21T11:59:50Z",
+    "window_seconds": 30,
+    "source_ip": "203.0.113.42",
+    "service": "public-rpc",
+    "transport": "tcp",
+    "destination_ports": [
+      8899
+    ],
+    "observation": "denied_connection_attempts",
+    "attempts": 50,
+    "proof_level": "unverified_network_log"
+  },
+  {
+    "schema": 1,
+    "event_id": "spoofable_only-b",
+    "node_id": "b",
+    "dedup_key": "spoofable_only-b-dedup",
+    "observed_at": "2026-11-21T11:59:50Z",
+    "window_seconds": 30,
+    "source_ip": "203.0.113.42",
+    "service": "public-rpc",
+    "transport": "tcp",
+    "destination_ports": [
+      8899
+    ],
+    "observation": "denied_connection_attempts",
+    "attempts": 50,
+    "proof_level": "unverified_network_log"
+  }
+]

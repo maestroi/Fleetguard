@@ -1,0 +1,9 @@
+{
+  "groups": {
+    "public-rpc": {"services": ["public-rpc"]}
+  },
+  "nodes": [
+    {"node_id": "lab-node-a", "token_sha256": "REPLACE_WITH_FIRST_NODE_TOKEN_SHA256", "groups": ["public-rpc"], "revoked": false},
+    {"node_id": "lab-node-b", "token_sha256": "REPLACE_WITH_SECOND_NODE_TOKEN_SHA256", "groups": ["public-rpc"], "revoked": false}
+  ]
+}

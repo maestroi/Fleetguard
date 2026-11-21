@@ -1,0 +1,36 @@
+[
+  {
+    "schema": 1,
+    "event_id": "shared_nat-a",
+    "node_id": "a",
+    "dedup_key": "shared_nat-a-dedup",
+    "observed_at": "2026-11-21T11:59:50Z",
+    "window_seconds": 30,
+    "source_ip": "198.51.100.42",
+    "service": "public-rpc",
+    "transport": "tcp",
+    "destination_ports": [
+      8899
+    ],
+    "observation": "application_abuse",
+    "attempts": 50,
+    "proof_level": "application_verified"
+  },
+  {
+    "schema": 1,
+    "event_id": "shared_nat-b",
+    "node_id": "b",
+    "dedup_key": "shared_nat-b-dedup",
+    "observed_at": "2026-11-21T11:59:50Z",
+    "window_seconds": 30,
+    "source_ip": "198.51.100.42",
+    "service": "public-rpc",
+    "transport": "tcp",
+    "destination_ports": [
+      8899
+    ],
+    "observation": "application_abuse",
+    "attempts": 50,
+    "proof_level": "application_verified"
+  }
+]

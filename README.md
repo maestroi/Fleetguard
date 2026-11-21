@@ -97,6 +97,12 @@ The server rejects wildcard/public bind addresses, non-TLS requests, unknown or 
 
 Every successful `main` update (including bot-performed merges) builds a fresh experimental `v0.1.N` prerelease and uploads a Linux AMD64 tarball and `SHA256SUMS` to [GitHub Releases](https://github.com/maestroi/Fleetguard/releases). The controller requires system `libsqlite3`; no build is production-ready by virtue of being released. See [automation and release details](docs/automation.md). The first workflow PR must be merged manually to activate it; configuring GitHub branch protection is recommended.
 
+## Manual cross-node correlation (issue #6)
+
+A new **offline, observe-only** `fleetguard-controller -evaluate` mode correlates persisted, authenticated evidence into scoped advisory candidates. It requires at least two distinct reporters from independently configured trust domains, application-verified proof, and an operator-controlled service/observation/transport/port allowlist. Raw SYN/UDP logs cannot trigger a candidate, and known shared NAT addresses require explicit manual review. Output is audited locally but **never published to agent snapshots or applied by a firewall**.
+
+Read [the correlation guide](docs/correlation.md) and [example local policy](examples/correlation/lab-policy.example.json). The controller still serves signed **empty** policies.
+
 ## License and contributions
 
 Licensed under [Apache-2.0](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md) for the PR and testing workflow and [SECURITY.md](SECURITY.md) for private vulnerability reporting.

@@ -41,6 +41,7 @@ See [GitHub Issues](https://github.com/maestroi/Fleetguard/issues) for the imple
 - [Threat model and safety requirements](docs/threat-model.md)
 - [Isolated homelab POC test plan](docs/homelab-poc.md)
 - [ADR 0001: firewalld-first backend](docs/adr/0001-firewalld-first.md)
+- [ADR 0002: role-based exposure profiles](docs/adr/0002-exposure-profiles.md)
 
 ## Implementation status
 

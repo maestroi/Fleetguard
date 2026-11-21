@@ -13,6 +13,7 @@ import (
  "net/http"
  "net/url"
  "os"
+ "strings"
  "time"
 
  "github.com/maestroi/Fleetguard/pkg/protocol"
@@ -41,7 +42,7 @@ func NewTransport(c RuntimeConfig,token string)(*Transport,error) {
    TLSClientConfig:&tls.Config{MinVersion:tls.VersionTLS13,RootCAs:roots},
   },
  }
- return &Transport{http:client,base:c.ControllerURL,token:token,node:c.NodeID,group:c.ServiceGroup},nil
+ return &Transport{http:client,base:strings.TrimSuffix(c.ControllerURL,"/"),token:token,node:c.NodeID,group:c.ServiceGroup},nil
 }
 func (t *Transport) endpoint(path string)string {
  q:=url.Values{"group":{t.group}}

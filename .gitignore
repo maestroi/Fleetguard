@@ -1,0 +1,25 @@
+# Build output and test artifacts
+/dist/
+/bin/
+*.test
+*.out
+coverage*.html
+coverage*.txt
+*.prof
+
+# Editors, operating systems and local environment
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+.env
+.env.*
+!.env.example
+
+# Credentials and private keys (never commit real credentials)
+*.key
+*.p12
+*.pfx
+*private*.pem
+*secret*.json

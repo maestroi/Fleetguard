@@ -1,0 +1,38 @@
+name: Go CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false # no external Go dependencies yet, and no go.sum
+      - name: Format check
+        run: make fmt-check
+      - name: Check module metadata
+        run: make tidy-check
+      - name: Static analysis
+        run: make vet
+      - name: Unit tests (race detector)
+        run: go test -race ./...
+      - name: Build Linux amd64 binaries
+        run: make build
+      - name: Unprivileged simulated smoke test
+        run: make smoke

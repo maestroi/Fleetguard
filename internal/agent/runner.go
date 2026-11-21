@@ -164,6 +164,15 @@ func Run(ctx context.Context, configPath string, out io.Writer) error {
 		EmergencyDisabled: emergency, MaxOfflineAge: time.Duration(c.MaxOfflineAgeSeconds) * time.Second, Now: time.Now,
 	})
 	if err != nil {
+		// If state recovery fails after a crash, do not leave unknown runtime
+		// blocks installed until a human eventually repairs the state file.
+		if c.Mode == "enforce" {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			if removeErr := backend.RemoveOwned(cleanupCtx); removeErr != nil {
+				slog.Error("unsafe recovery and owned cleanup failed", "error", removeErr)
+			}
+			cancel()
+		}
 		return err
 	}
 	poller := &Poller{Engine: engine, Client: client}

@@ -1,0 +1,16 @@
+{
+  "mode": "observe",
+  "protected_cidrs": ["192.0.2.10/32", "2001:db8::10/128"],
+  "management_interfaces": ["tailscale0"],
+  "controller_ips": ["198.51.100.2"],
+  "service_scopes": [
+    {
+      "service_group": "public-rpc",
+      "service": "solana-rpc",
+      "transport": "tcp",
+      "ports": [443, 8899]
+    }
+  ],
+  "max_decision_ttl_seconds": 120,
+  "max_decisions": 64
+}

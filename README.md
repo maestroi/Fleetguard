@@ -114,6 +114,16 @@ A versioned, **non-root** Linux AMD64 controller image is published to the GitHu
 
 The Compose deployment uses UID/GID 65532, **drops all Linux capabilities**, disables privilege escalation, uses a **read-only root filesystem**, mounts only private read-only credentials plus writable SQLite state, enforces resource limits and exposes HTTPS **only on host loopback**. It does **not** require `NET_ADMIN`, privileged mode, host networking, Docker socket or host firewalld access. No live blocking is implemented. Use an explicit published version tag, not a floating `latest`. The container's GHCR package may need a one-time change to **Public** for anonymous pulls.
 
+## Local safety authorization and recovery (issue #7)
+
+The root-managed local safety policy and offline emergency latch are documented in [local safety and recovery](docs/local-safety.md). These safety gates validate protected source networks, service/port scopes, decision limits, management interface state and backend verification independently of signed central policy. The current controller and agent remain observe-only: **there is still no live firewalld adapter or automatic enforcement.** The latch is preparatory until the adapter and reconciler are integrated.
+
+```sh
+go run ./cmd/fleetguardctl check-safety -config examples/safety-policy.json
+# On a prepared disposable Linux VM only:
+# sudo fleetguardctl emergency-disable -state-dir /run/fleetguard
+```
+
 ## License and contributions
 
 Licensed under [Apache-2.0](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md) for the PR and testing workflow and [SECURITY.md](SECURITY.md) for private vulnerability reporting.

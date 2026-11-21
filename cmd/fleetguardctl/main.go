@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
@@ -19,10 +20,11 @@ import (
 
 	"github.com/maestroi/Fleetguard/internal/buildinfo"
 	"github.com/maestroi/Fleetguard/internal/config"
+	"github.com/maestroi/Fleetguard/internal/safety"
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: fleetguardctl version | check-config -kind agent|controller -config FILE | simulate [-a FILE] [-b FILE] [-at RFC3339] | hash-token (stdin) | generate-signing-key -private FILE -public FILE")
+	fmt.Fprintln(os.Stderr, "usage: fleetguardctl version | check-config -kind agent|controller -config FILE | simulate [-a FILE] [-b FILE] [-at RFC3339] | check-safety -config FILE | emergency-disable [-state-dir DIR] | hash-token (stdin) | generate-signing-key -private FILE -public FILE")
 }
 
 func main() {
@@ -31,6 +33,22 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+ case "check-safety":
+  flags := flag.NewFlagSet("check-safety", flag.ExitOnError)
+  path := flags.String("config", "", "path to local safety JSON")
+  flags.Parse(os.Args[2:])
+  if flags.NArg()!=0 || *path=="" { usage();os.Exit(2) }
+  data,err:=os.ReadFile(*path)
+  if err==nil {_,err=safety.Parse(data)}
+  if err!=nil {fmt.Fprintln(os.Stderr,"invalid safety policy:",err);os.Exit(1)}
+  fmt.Println("local safety policy syntax valid (this does not enable enforcement)")
+ case "emergency-disable":
+  flags:=flag.NewFlagSet("emergency-disable",flag.ExitOnError)
+  dir:=flags.String("state-dir","/run/fleetguard","pre-existing root-owned state directory")
+  flags.Parse(os.Args[2:])
+  if flags.NArg()!=0 {usage();os.Exit(2)}
+  if err:=safety.EmergencyDisable(context.Background(),*dir,nil);err!=nil {fmt.Fprintln(os.Stderr,"emergency-disable:",err);os.Exit(1)}
+  fmt.Println("emergency kill switch latched locally; this build has no live firewall backend or rules to remove")
 	case "hash-token":
 		if len(os.Args) != 2 {
 			usage()

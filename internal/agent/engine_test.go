@@ -5,7 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
- "net/netip"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -319,39 +319,43 @@ func TestFileStorePrivateAtomicPersistence(t *testing.T) {
 }
 
 func TestManagementPathFailureCleansOwnedAndDoesNotBlockExpiry(t *testing.T) {
- e, _, now, priv, real := fixture(t, "enforce")
- signed := snapshot(t, priv, *now, 1, "203.0.113.42/32")
- if _, err := e.Accept(context.Background(), signed); err != nil {
-  t.Fatal(err)
- }
- if len(real.applied) != 1 { t.Fatal("missing initial ban") }
- e.options.Policy.ManagementInterfaces = []string{"tailscale0"}
- e.options.ManagementPrefixLookup.InterfacePrefixes = func(string) ([]netip.Prefix, error) {
-  return nil, errors.New("management interface offline")
- }
- if err := e.Tick(context.Background()); err == nil {
-  t.Fatal("unverified management path was accepted")
- }
- if len(real.applied) != 0 || real.removed == 0 {
-  t.Fatal("unsafe management failure retained dynamic drop")
- }
- *now = (*now).Add(51 * time.Second)
- if err := e.Tick(context.Background()); err != nil {
-  t.Fatal("fully expired desired state must be removable even if management interface is down: ", err)
- }
- if len(real.applied) != 0 {
-  t.Fatal("expired ban reappeared")
- }
+	e, _, now, priv, real := fixture(t, "enforce")
+	signed := snapshot(t, priv, *now, 1, "203.0.113.42/32")
+	if _, err := e.Accept(context.Background(), signed); err != nil {
+		t.Fatal(err)
+	}
+	if len(real.applied) != 1 {
+		t.Fatal("missing initial ban")
+	}
+	e.options.Policy.ManagementInterfaces = []string{"tailscale0"}
+	e.options.ManagementPrefixLookup.InterfacePrefixes = func(string) ([]netip.Prefix, error) {
+		return nil, errors.New("management interface offline")
+	}
+	if err := e.Tick(context.Background()); err == nil {
+		t.Fatal("unverified management path was accepted")
+	}
+	if len(real.applied) != 0 || real.removed == 0 {
+		t.Fatal("unsafe management failure retained dynamic drop")
+	}
+	*now = (*now).Add(51 * time.Second)
+	if err := e.Tick(context.Background()); err != nil {
+		t.Fatal("fully expired desired state must be removable even if management interface is down: ", err)
+	}
+	if len(real.applied) != 0 {
+		t.Fatal("expired ban reappeared")
+	}
 }
 
 func TestRestartDoesNotTrustAlteredPersistedSignature(t *testing.T) {
- e, store, now, priv, _ := fixture(t, "observe")
- signed := snapshot(t, priv, *now, 1, "203.0.113.42/32")
- if _, err := e.Accept(context.Background(), signed); err != nil { t.Fatal(err) }
- altered := *store.state.Signed
- altered.SignatureBase64 = "invalid"
- store.state.Signed = &altered
- if _, err := NewEngine(e.options); err == nil {
-  t.Fatal("modified persisted signature was trusted on restart")
- }
+	e, store, now, priv, _ := fixture(t, "observe")
+	signed := snapshot(t, priv, *now, 1, "203.0.113.42/32")
+	if _, err := e.Accept(context.Background(), signed); err != nil {
+		t.Fatal(err)
+	}
+	altered := *store.state.Signed
+	altered.SignatureBase64 = "invalid"
+	store.state.Signed = &altered
+	if _, err := NewEngine(e.options); err == nil {
+		t.Fatal("modified persisted signature was trusted on restart")
+	}
 }

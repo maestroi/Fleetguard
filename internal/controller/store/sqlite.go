@@ -84,6 +84,7 @@ func Open(path string) (*DB, error) {
 	for _, sql := range []string{
 		`PRAGMA journal_mode=DELETE`,
 		`CREATE TABLE IF NOT EXISTS evidence (node_id TEXT NOT NULL, event_id TEXT NOT NULL, dedup_key TEXT NOT NULL, group_id TEXT NOT NULL, payload TEXT NOT NULL, digest TEXT NOT NULL, received_at TEXT NOT NULL, PRIMARY KEY(node_id,event_id), UNIQUE(node_id,dedup_key))`,
+		`CREATE INDEX IF NOT EXISTS evidence_group_received_idx ON evidence(group_id,received_at)`,
 		`CREATE TABLE IF NOT EXISTS snapshots (node_id TEXT NOT NULL, group_id TEXT NOT NULL, revision INTEGER NOT NULL, expires_at TEXT NOT NULL, envelope TEXT NOT NULL, PRIMARY KEY(node_id,group_id))`,
 		`CREATE TABLE IF NOT EXISTS acks (node_id TEXT NOT NULL, group_id TEXT NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL, reason TEXT NOT NULL, received_at TEXT NOT NULL, PRIMARY KEY(node_id,group_id,revision,state))`,
 		`CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, received_at TEXT NOT NULL, kind TEXT NOT NULL, node_id TEXT NOT NULL, detail TEXT NOT NULL)`,
@@ -337,4 +338,62 @@ func (s *DB) AuditCount() (int, error) {
 		return 0, nil
 	}
 	return strconv.Atoi(r[0])
+}
+
+// GroupEvidence reads a strictly bounded set of authenticated, durable event
+// records for an operator-only offline evaluation. It never silently truncates
+// an over-capacity group: partial promotion would be unsafe.
+func (s *DB) GroupEvidence(group string, since time.Time, limit int) ([]protocol.Evidence, error) {
+	if group == "" || limit < 1 || limit > 4096 {
+		return nil, errors.New("invalid evidence group or capacity")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stmt, err := s.prepare(`SELECT payload FROM evidence WHERE group_id=? AND received_at>=? ORDER BY received_at DESC,node_id,event_id LIMIT ?`, []string{group, instant(since), strconv.Itoa(limit + 1)})
+	if err != nil {
+		return nil, err
+	}
+	defer C.sqlite3_finalize(stmt)
+	result := make([]protocol.Evidence, 0)
+	for {
+		rc := C.sqlite3_step(stmt)
+		if rc == C.SQLITE_DONE {
+			break
+		}
+		if rc != C.SQLITE_ROW {
+			return nil, fmt.Errorf("sqlite group evidence: %s", C.GoString(C.sqlite3_errmsg(s.db)))
+		}
+		if len(result) >= limit {
+			return nil, errors.New("evidence group exceeds evaluation capacity")
+		}
+		ptr := C.sqlite3_column_text(stmt, 0)
+		if ptr == nil {
+			return nil, errors.New("stored evidence payload is NULL")
+		}
+		var e protocol.Evidence
+		if err := json.Unmarshal([]byte(C.GoString((*C.char)(unsafe.Pointer(ptr)))), &e); err != nil {
+			return nil, fmt.Errorf("malformed stored evidence: %w", err)
+		}
+		result = append(result, e)
+	}
+	return result, nil
+}
+
+// AuditEvaluation records an operator's observe-only evaluation without
+// revealing bearer tokens or signing keys. A failed evaluation also audits.
+func (s *DB) AuditEvaluation(group string, count int, reason string, now time.Time) error {
+	if len(group) > 128 || len(reason) > 64 {
+		return errors.New("invalid evaluation audit metadata")
+	}
+	return s.Audit("correlation_evaluation", "operator", fmt.Sprintf("group=%s candidates=%d result=%s", group, count, reason), now)
+}
+
+// AuditCandidate stores a bounded, local-only reason trail for a simulated
+// candidate. This does not write to signed snapshots or firewalls.
+func (s *DB) AuditCandidate(group string, d protocol.Decision, status, reason string, now time.Time) error {
+	if len(group) > 128 || len(status) > 32 || len(reason) > 64 || len(d.Source) > 64 || len(d.Service) > 128 || len(d.DestinationPorts) != 1 {
+		return errors.New("invalid correlation candidate audit")
+	}
+	detail := fmt.Sprintf("group=%s source=%s service=%s transport=%s port=%d status=%s reason=%s", group, d.Source, d.Service, d.Transport, d.DestinationPorts[0], status, reason)
+	return s.Audit("correlation_candidate", "operator", detail, now)
 }

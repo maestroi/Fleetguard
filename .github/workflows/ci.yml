@@ -42,6 +42,8 @@ jobs:
         run: |
           bash scripts/test-release-version.sh
           bash scripts/test-eligible-owner-pr.sh
+      - name: Cross-node correlation and operator audit tests
+        run: go test -count=1 ./internal/controller/correlation ./internal/controller/store ./cmd/fleetguard-controller
       - name: Unit tests (race detector)
         run: go test -race ./...
       - name: Build Linux amd64 binaries

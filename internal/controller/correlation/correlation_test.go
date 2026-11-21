@@ -174,22 +174,22 @@ func TestCapacityAndExplicitPolicy(t *testing.T) {
 	if err == nil {
 		t.Fatal("over-capacity candidates must fail closed")
 	}
-	cfg, registry = lab()
+	cfg, _ = lab()
 	cfg.MinNodes = 1
 	if err := Validate(cfg); err == nil {
 		t.Fatal("single-node policy accepted")
 	}
-	cfg, registry = lab()
+	cfg, _ = lab()
 	cfg.Mode = "enforce"
 	if err := Validate(cfg); err == nil {
 		t.Fatal("enforcement policy accepted")
 	}
-	cfg, registry = lab()
+	cfg, _ = lab()
 	cfg.NodeDomains["b"] = "rack-a"
 	if err := Validate(cfg); err == nil {
 		t.Fatal("same-domain policy accepted")
 	}
-	cfg, registry = lab()
+	cfg, _ = lab()
 	cfg.Scopes = nil
 	if err := Validate(cfg); err == nil {
 		t.Fatal("empty scopes accepted")

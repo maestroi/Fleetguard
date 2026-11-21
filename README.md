@@ -2,7 +2,7 @@
 
 **Fleet-wide threat detection and safe, distributed firewall enforcement.**
 
-> **Status: experimental bootstrap / proof of concept.** The binaries currently validate local configuration and print simulated state only. No network services, real sensors, policy issuance or firewall enforcement exist yet. Do not deploy to critical systems.
+> **Status: experimental proof of concept.** A private, opt-in HTTPS controller now accepts authenticated lab evidence and serves signed **empty** policies. Synthetic sensors and mock firewalls remain test-only. No automatic threat promotion or real firewall enforcement exists. Do not deploy to critical systems.
 
 Fleetguard is an open-source Go project exploring a hybrid approach to host network defense:
 

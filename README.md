@@ -124,6 +124,10 @@ go run ./cmd/fleetguardctl check-safety -config examples/safety-policy.json
 # sudo fleetguardctl emergency-disable -state-dir /run/fleetguard
 ```
 
+## Experimental firewalld D-Bus adapter (issue #8)
+
+The [firewalld D-Bus backend](internal/firewall/firewalld) is implemented as a **separate, not-yet-wired library** with a real D-Bus client, pre-provisioned host/IPSet ownership checks, port-scoped runtime rules, minimal-change reconciliation, exact owned-object cleanup and mock-based tests. It deliberately refuses unsupported backends and zone topology; it does not enable blocking in the current agent. Read [isolated VM prerequisites, limits and test plan](docs/firewalld-backend.md). In particular, real packet-path tests and expiry/restart integration (#9 and #11) are still required before live use.
+
 ## License and contributions
 
 Licensed under [Apache-2.0](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md) for the PR and testing workflow and [SECURITY.md](SECURITY.md) for private vulnerability reporting.

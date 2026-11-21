@@ -162,7 +162,7 @@ func TestExpiryAndContext(t *testing.T) {
  b,_,now:=fixture(t)
  ctx:=context.Background()
  if _,err:=b.Reconcile(ctx,[]protocol.Decision{decision(0,*now,443)});err!=nil{t.Fatal(err)}
- *now=now.Add(61*time.Second)
+ *now=(*now).Add(61*time.Second)
  if _,err:=b.Inspect(ctx);!errors.Is(err,ErrDrift){t.Fatalf("expired entry must not claim applied state: %v",err)}
  if _,err:=b.Reconcile(ctx,nil);err!=nil{t.Fatal(err)}
  cancelled,cancel:=context.WithCancel(ctx);cancel()

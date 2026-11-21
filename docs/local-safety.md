@@ -34,6 +34,6 @@ The marker is deliberately **not** automatically removed on restart. Only a loca
 
 ## Remaining gates for live enforcement
 
-- Issue #8: firewalld D-Bus version/capability/rule-order checks; ownership-aware RemoveOwned and verified INPUT path.
+- Issue #8: a separate D-Bus adapter now implements runtime owned-state cleanup with strict capability/zone checks. **Real INPUT packet-path attestation and VM integration tests remain pending**; see [the backend guide](firewalld-backend.md).
 - Issue #9: connect the signed snapshot validator and persistent emergency latch to polling, apply state and offline/TTL reconciliation.
 - Issue #11: test management/Tailscale connectivity, malicious signed policy and offline recovery on isolated disposable VMs. No production/Proxmox-host deployment.

@@ -6,7 +6,7 @@ COMMIT ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 BUILD_DATE ?= unknown
 LDFLAGS = -buildid= -X github.com/maestroi/Fleetguard/internal/buildinfo.Version=$(VERSION) -X github.com/maestroi/Fleetguard/internal/buildinfo.Commit=$(COMMIT) -X github.com/maestroi/Fleetguard/internal/buildinfo.BuildDate=$(BUILD_DATE)
 
-.PHONY: fmt fmt-check test vet tidy-check check build smoke clean
+.PHONY: fmt fmt-check test vet tidy-check check build smoke simulate clean
 
 fmt:
 	gofmt -w cmd internal pkg
@@ -38,6 +38,10 @@ smoke:
 	./dist/fleetguardctl check-config -kind agent -config examples/agent.json
 	./dist/fleetguardctl check-config -kind controller -config examples/controller.json
 	./dist/fleetguardctl version
+	./dist/fleetguardctl simulate
+
+simulate: build
+	./dist/fleetguardctl simulate
 
 clean:
 	rm -rf dist

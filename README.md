@@ -2,7 +2,7 @@
 
 **Fleet-wide threat detection and safe, distributed firewall enforcement.**
 
-> **Status: experimental bootstrap / proof of concept.** The binaries currently validate local configuration and print simulated state only. No network services, sensors, policy issuance or firewall enforcement exist yet. Do not deploy to critical systems.
+> **Status: experimental bootstrap / proof of concept.** The binaries currently validate local configuration and print simulated state only. No network services, real sensors, policy issuance or firewall enforcement exist yet. Do not deploy to critical systems.
 
 Fleetguard is an open-source Go project exploring a hybrid approach to host network defense:
 
@@ -40,7 +40,7 @@ See [GitHub Issues](https://github.com/maestroi/Fleetguard/issues) for the imple
 
 ## Implementation status
 
-The Go monorepo contains buildable command-line entry points and a simulated, observe-only startup path. It does **not** yet run a persistent agent/controller, detect attacks, communicate over a network, or manage firewall rules.
+The Go monorepo contains buildable command-line entry points and a simulated, observe-only startup path. It does **not** yet run a persistent agent/controller, detect attacks, communicate over a network, or manage firewall rules. A separate deterministic synthetic sensor and in-memory mock backend are available for rootless testing.
 
 The versioned **data-only** event and Ed25519-signed policy contract lives in [`pkg/protocol`](pkg/protocol) and is documented in [Protocol v1](docs/protocol-v1.md). This library does not enable enforcement, implement controller authentication, or replace local safety checks.
 
@@ -72,6 +72,10 @@ Build metadata defaults to `VERSION=dev`, `COMMIT=<git short SHA>` and `BUILD_DA
 ```sh
 make build VERSION=v0.0.0-dev COMMIT=local-test BUILD_DATE=unknown
 ```
+
+## Rootless synthetic demo (issue #4)
+
+Run `make simulate` (or `make build && ./dist/fleetguardctl simulate`) for a two-node fixture demo with a simulated partition and a manually seeded mock-only drop that expires under a virtual clock. No sockets, firewalld, root access or real packet filtering are involved. The demo is *not* automatic correlation or signed-policy enforcement. See [simulation documentation](docs/simulation.md) and the bounded fixture files under `examples/synthetic/`.
 
 ## License and contributions
 

@@ -1,0 +1,43 @@
+# syntax=docker/dockerfile:1
+# Controller only. No host firewall access or privileged build/runtime features.
+FROM golang:1.27-bookworm AS build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      gcc libc6-dev libsqlite3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY . .
+
+ARG VERSION=dev
+ARG COMMIT=unknown
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+    go build -trimpath -buildvcs=false \
+      -ldflags="-buildid= -X github.com/maestroi/Fleetguard/internal/buildinfo.Version=${VERSION} -X github.com/maestroi/Fleetguard/internal/buildinfo.Commit=${COMMIT} -X github.com/maestroi/Fleetguard/internal/buildinfo.BuildDate=unknown" \
+      -o /out/fleetguard-controller ./cmd/fleetguard-controller
+
+FROM debian:bookworm-slim AS runtime
+
+ARG VERSION=dev
+ARG COMMIT=unknown
+LABEL org.opencontainers.image.source="https://github.com/maestroi/Fleetguard" \
+      org.opencontainers.image.title="Fleetguard Controller" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT}" \
+      org.opencontainers.image.description="Experimental, observe-only HTTPS controller (no firewall capabilities)"
+
+# The dynamically linked controller needs the SQLite runtime library only.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libsqlite3-0 ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && install -d -m 0700 -o 65532 -g 65532 /etc/fleetguard /var/lib/fleetguard
+
+COPY --from=build /out/fleetguard-controller /usr/local/bin/fleetguard-controller
+
+# Run unprivileged even when launched outside Compose.
+USER 65532:65532
+WORKDIR /
+EXPOSE 9443/tcp
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["/usr/local/bin/fleetguard-controller"]
+CMD ["-serve", "-config", "/etc/fleetguard/server.json"]

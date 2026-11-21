@@ -1,4 +1,4 @@
-# Every user push/merge to main gets its own versioned GitHub Release.
+# Every push/merge to main publishes versioned binary + controller-container assets.
 # Auto-merges performed with GITHUB_TOKEN use workflow_dispatch instead.
 name: Publish release
 
@@ -14,8 +14,8 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
-# GitHub's queue: max avoids replacing pending releases under rapid merges.
 concurrency:
   group: fleetguard-release-main
   cancel-in-progress: false
@@ -24,7 +24,7 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Check out full main history
         uses: actions/checkout@v6
@@ -70,8 +70,11 @@ jobs:
           make check
           go test -race ./...
           bash scripts/test-release-version.sh
+          docker compose --env-file deploy/controller/.env.example \
+            -f deploy/controller/compose.yaml config --format json > "$RUNNER_TEMP/fleetguard-compose.json"
+          python3 scripts/test-compose-security.py "$RUNNER_TEMP/fleetguard-compose.json"
 
-      - name: Build, smoke-test, and package Linux AMD64
+      - name: Build, smoke-test, and package Linux AMD64 + Compose
         shell: bash
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
@@ -88,18 +91,58 @@ jobs:
           tar --sort=name --owner=0 --group=0 --numeric-owner \
             --mtime="@$(git show -s --format=%ct "$RELEASE_SHA")" \
             -czf "release/$archive" -C release/stage .
-          (cd release && sha256sum "$archive" > SHA256SUMS)
-          echo "Asset: release/$archive"
+          compose_archive="fleetguard_${RELEASE_TAG}_compose.tar.gz"
+          tar --sort=name --owner=0 --group=0 --numeric-owner \
+            --mtime="@$(git show -s --format=%ct "$RELEASE_SHA")" \
+            -czf "release/$compose_archive" -C deploy/controller \
+            compose.yaml .env.example server.example.json registry.example.json README.md
+          (cd release && sha256sum *.tar.gz > SHA256SUMS)
+          echo "Assets: release/$archive release/$compose_archive"
 
-      - name: Upload CI artifact
+      - name: Upload CI artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: fleetguard-${{ steps.version.outputs.tag }}-linux-amd64
+          name: fleetguard-${{ steps.version.outputs.tag }}-linux-amd64-and-compose
           path: |
             release/*.tar.gz
             release/SHA256SUMS
           if-no-files-found: error
           retention-days: 30
+
+      - name: Build and smoke-test controller container without privileges
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_SHA: ${{ steps.version.outputs.sha }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/maestroi/fleetguard-controller:${RELEASE_TAG}"
+          docker build -f Dockerfile.controller \
+            --build-arg VERSION="$RELEASE_TAG" \
+            --build-arg COMMIT="${RELEASE_SHA:0:12}" \
+            -t "$image" .
+          test "$(docker image inspect --format '{{.Config.User}}' "$image")" = "65532:65532"
+          output="$(docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --user 65532:65532 --pids-limit 64 \
+            "$image" -version)"
+          case "$output" in *"$RELEASE_TAG"*) ;; *) echo "Wrong image version: $output" >&2; exit 1;; esac
+          echo "Unprivileged image smoke test: $output"
+
+      - name: Publish version-pinned controller image to GHCR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_SHA: ${{ steps.version.outputs.sha }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/maestroi/fleetguard-controller"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io \
+            --username "$GITHUB_ACTOR" --password-stdin
+          docker push "$image:$RELEASE_TAG"
+          docker tag "$image:$RELEASE_TAG" "$image:sha-$RELEASE_SHA"
+          docker push "$image:sha-$RELEASE_SHA"
+          docker logout ghcr.io
 
       - name: Create or repair GitHub Release
         shell: bash
@@ -111,6 +154,7 @@ jobs:
         run: |
           set -euo pipefail
           archive="release/fleetguard_${RELEASE_TAG}_linux_amd64.tar.gz"
+          compose="release/fleetguard_${RELEASE_TAG}_compose.tar.gz"
           if gh release view "$RELEASE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
             # Never replace the assets of a tag pointing to another commit.
             git fetch origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
@@ -119,11 +163,11 @@ jobs:
               echo "Tag $RELEASE_TAG points to unexpected commit $actual" >&2
               exit 1
             }
-            gh release upload "$RELEASE_TAG" "$archive" release/SHA256SUMS \
+            gh release upload "$RELEASE_TAG" "$archive" "$compose" release/SHA256SUMS \
               --repo "$GH_REPO" --clobber
           else
-            gh release create "$RELEASE_TAG" "$archive" release/SHA256SUMS \
+            gh release create "$RELEASE_TAG" "$archive" "$compose" release/SHA256SUMS \
               --repo "$GH_REPO" --target "$RELEASE_SHA" \
               --title "$RELEASE_TAG" --prerelease \
-              --notes "Experimental Fleetguard build from main at $RELEASE_SHA. Observe-only by default; not production ready. The controller binary requires system libsqlite3. See README and SHA256SUMS."
+              --notes "Experimental Fleetguard build from main at $RELEASE_SHA. Observe-only by default; not production ready. Linux AMD64 binaries and least-privilege Compose example attached. Controller image: ghcr.io/maestroi/fleetguard-controller:$RELEASE_TAG (linux/amd64; needs private configuration and persistent SQLite volume). The controller image contains no firewall enforcement or host networking access. See docs/container-deployment.md and SHA256SUMS."
           fi

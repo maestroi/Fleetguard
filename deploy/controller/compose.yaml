@@ -1,0 +1,45 @@
+# Unprivileged, observe-only controller. A static private bridge address is
+# needed because Fleetguard deliberately rejects wildcard bind addresses.
+services:
+  controller:
+    image: ghcr.io/maestroi/fleetguard-controller:${FLEETGUARD_TAG:?Set FLEETGUARD_TAG in .env to a released v0.1.N tag}
+    user: "65532:65532"
+    privileged: false
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 1.0
+    stop_grace_period: 15s
+    restart: unless-stopped
+    ports:
+      # Loopback host binding only. External users need an explicitly secured
+      # private proxy/Tailscale setup; never publish this publicly by default.
+      - "127.0.0.1:${FLEETGUARD_HOST_PORT:-9443}:9443/tcp"
+    volumes:
+      - type: bind
+        source: ./private
+        target: /etc/fleetguard
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./state
+        target: /var/lib/fleetguard
+        bind:
+          create_host_path: false
+    networks:
+      controller_private:
+        ipv4_address: ${FLEETGUARD_CONTAINER_IP:-172.30.240.10}
+
+networks:
+  controller_private:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${FLEETGUARD_SUBNET:-172.30.240.0/24}

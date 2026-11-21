@@ -1,0 +1,15 @@
+{
+  "groups": {
+    "lab-ssh": {
+      "services": ["ssh"]
+    }
+  },
+  "nodes": [
+    {
+      "node_id": "lab-node-a",
+      "token_sha256": "REPLACE_WITH_SHA256_OF_UNIQUE_RANDOM_NODE_TOKEN",
+      "groups": ["lab-ssh"],
+      "revoked": false
+    }
+  ]
+}

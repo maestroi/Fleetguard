@@ -95,7 +95,19 @@ approved source/port and configured locally protected policy; also prove with
 external traffic captures that **only** that host INPUT port drops. The harness
 must not be mistaken for the broader four-VM packet-path acceptance test.
 
-Rootless benchmarks: `go test ./internal/firewall/firewalld -run '^$' -bench BenchmarkReconcile -benchmem`. These are **mock D-Bus call-plan/validation** timings, not kernel or bus throughput numbers. 10,000 is a deliberate early rejection measurement. Real D-Bus latency and the four-VM packet-path tests are outstanding acceptance gates for #8/#11.
+Rootless benchmarks: `go test ./internal/firewall/firewalld -run '^$' -bench BenchmarkReconcile -benchmem`.
+
+Measured on GitHub Actions Ubuntu 24.04 using Go 1.27, `-benchtime=20x -benchmem`
+([CI run](https://github.com/maestroi/Fleetguard/actions/runs/44941481884)):
+
+| Mock D-Bus scenario | ns/op | B/op | allocs/op |
+|---|---:|---:|---:|
+| 1 decision | 21,554 | 5,282 | 126 |
+| 100 decisions | 190,834 | 86,875 | 1,034 |
+| 10,000 proposed decisions | 95.10 | 16 | 1 |
+
+The 10,000 case **does no firewall mutation**: it is an early size-cap
+rejection benchmark. Timings are illustrative, not firewalld/kernel throughput. These are **mock D-Bus call-plan/validation** timings, not kernel or bus throughput numbers. 10,000 is a deliberate early rejection measurement. Real D-Bus latency and the four-VM packet-path tests are outstanding acceptance gates for #8/#11.
 
 ## References
 - [Upstream firewalld D-Bus API](https://firewalld.org/documentation/man-pages/firewalld.dbus)

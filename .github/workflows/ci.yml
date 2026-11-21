@@ -30,6 +30,8 @@ jobs:
         run: make tidy-check
       - name: Static analysis
         run: make vet
+      - name: Protocol contract and fixture tests
+        run: go test -count=1 ./pkg/protocol
       - name: Unit tests (race detector)
         run: go test -race ./...
       - name: Build Linux amd64 binaries

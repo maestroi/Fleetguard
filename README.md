@@ -42,6 +42,8 @@ See [GitHub Issues](https://github.com/maestroi/Fleetguard/issues) for the imple
 
 The Go monorepo contains buildable command-line entry points and a simulated, observe-only startup path. It does **not** yet run a persistent agent/controller, detect attacks, communicate over a network, or manage firewall rules.
 
+The versioned **data-only** event and Ed25519-signed policy contract lives in [`pkg/protocol`](pkg/protocol) and is documented in [Protocol v1](docs/protocol-v1.md). This library does not enable enforcement, implement controller authentication, or replace local safety checks.
+
 ## Developer quickstart (safe simulation only)
 
 Requirements: **Go 1.27+**, `make`, and Linux for the built binaries. Dependencies are standard-library-only.

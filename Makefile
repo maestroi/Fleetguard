@@ -9,10 +9,10 @@ LDFLAGS = -buildid= -X github.com/maestroi/Fleetguard/internal/buildinfo.Version
 .PHONY: fmt fmt-check test vet tidy-check check build smoke clean
 
 fmt:
-	gofmt -w cmd internal
+	gofmt -w cmd internal pkg
 
 fmt-check:
-	@test -z "$$(gofmt -l $$(find cmd internal -name '*.go' -type f))" || { echo 'Go files need gofmt'; exit 1; }
+	@test -z "$$(gofmt -l $$(find cmd internal pkg -name '*.go' -type f))" || { echo 'Go files need gofmt'; exit 1; }
 
 test:
 	$(GO) test ./...

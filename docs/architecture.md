@@ -1,6 +1,6 @@
 # Fleetguard architecture (draft)
 
-**Status:** design proposal, not implemented. **Target:** small, reproducible homelab POC. **First enforcement backend:** firewalld D-Bus.
+**Status:** design reference. Implemented parts are specified authoritatively in [Protocol v1](protocol-v1.md), [Controller API](controller-api.md) and [Correlation](correlation.md); where this document's sketches differ, those win. Firewalld enforcement is not implemented. **Target:** small, reproducible homelab POC. **First enforcement backend:** firewalld D-Bus.
 
 ## Problem
 
@@ -48,7 +48,7 @@ flowchart TB
   AB -->|ack / actual state| CP
 ```
 
-### Go modules (suggested, not locked in)
+### Go modules (original suggestion; see the repository tree for the actual layout)
 
 ```text
 cmd/fleetguard-agent/
@@ -95,7 +95,7 @@ The controller **cannot** send shell commands, replace the baseline firewall, ch
 
 ## Network event model
 
-Aggregate rather than upload every packet. Example:
+Aggregate rather than upload every packet. Illustrative sketch; the implemented schema is [Protocol v1 evidence](protocol-v1.md#evidence-agent--controller):
 
 ```json
 {
@@ -145,7 +145,7 @@ One snapshot per scope/revision is simpler to replay and recover than unreliable
 }
 ```
 
-Specify and test canonical byte serialization (or sign an exact encoded payload) **before implementation**. This is a wire-format sketch, not a compatible protocol yet. Support IPv6 /128 as a planned follow-up.
+Specify and test canonical byte serialization (or sign an exact encoded payload) **before implementation**. This was the pre-implementation sketch; the canonical encoding and fields are defined in [Protocol v1](protocol-v1.md). Support IPv6 /128 as a planned follow-up.
 
 Never trust remote time unconditionally: validate clock skew, TTL bounds, signed expiry, and local offline age. A rejected snapshot must not overwrite the last valid one.
 

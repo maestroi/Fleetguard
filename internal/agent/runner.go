@@ -8,7 +8,6 @@ import (
  "io"
  "log/slog"
  "math/rand/v2"
- "os"
  "time"
 
  "github.com/maestroi/Fleetguard/internal/firewall"

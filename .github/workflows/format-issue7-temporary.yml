@@ -1,0 +1,28 @@
+# Temporary branch-local formatter for issue #7, removed immediately after running.
+name: One-shot issue 7 gofmt
+on:
+  push:
+    branches: [feat/issue-7-local-safety-emergency]
+permissions:
+  contents: read
+jobs:
+  format:
+    if: github.actor == 'maestroi' && github.ref == 'refs/heads/feat/issue-7-local-safety-emergency'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: true
+      - name: Format only changed Go files and commit
+        run: |
+          set -euo pipefail
+          gofmt -w internal/safety/policy.go internal/safety/policy_test.go internal/safety/emergency.go internal/safety/emergency_test.go cmd/fleetguardctl/main.go
+          git diff --check
+          git add -- internal/safety/policy.go internal/safety/policy_test.go internal/safety/emergency.go internal/safety/emergency_test.go cmd/fleetguardctl/main.go
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "style: gofmt issue 7 local safety files"
+          git push origin HEAD:refs/heads/feat/issue-7-local-safety-emergency

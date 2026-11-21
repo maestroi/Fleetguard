@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "event_id": "event-tcp-001",
+  "node_id": "lab-node-a",
+  "dedup_key": "lab-node-a:203.0.113.88:443:20261121T1200",
+  "observed_at": "2026-11-21T11:59:50Z",
+  "window_seconds": 30,
+  "source_ip": "203.0.113.88",
+  "service": "public-api",
+  "transport": "tcp",
+  "destination_ports": [443],
+  "observation": "established_connection_anomaly",
+  "attempts": 11,
+  "proof_level": "established_connection"
+}

@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "event_id": "event-app-001",
+  "node_id": "lab-node-a",
+  "dedup_key": "lab-node-a:203.0.113.42:8899:20261121T1200",
+  "observed_at": "2026-11-21T11:59:50Z",
+  "window_seconds": 30,
+  "source_ip": "203.0.113.42",
+  "service": "public-rpc",
+  "transport": "tcp",
+  "destination_ports": [8899],
+  "observation": "application_abuse",
+  "attempts": 21,
+  "proof_level": "application_verified"
+}

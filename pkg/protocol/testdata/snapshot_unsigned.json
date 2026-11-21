@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "revision": 7,
+  "issued_at": "2026-11-21T11:59:45Z",
+  "expires_at": "2026-11-21T12:02:00Z",
+  "audience": {"service_group": "public-rpc", "node_id": "lab-node-a"},
+  "decisions": [{
+    "id": "decision-example-1",
+    "source": "203.0.113.42/32",
+    "action": "drop",
+    "service": "public-rpc",
+    "transport": "tcp",
+    "destination_ports": [8899],
+    "expires_at": "2026-11-21T12:01:00Z",
+    "reason_code": "verified_multi_node_abuse"
+  }],
+  "key_id": "lab-key-1"
+}

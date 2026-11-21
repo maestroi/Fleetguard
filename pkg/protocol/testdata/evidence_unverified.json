@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "event_id": "event-raw-syn-001",
+  "node_id": "lab-node-a",
+  "dedup_key": "lab-node-a:203.0.113.42:22:20261121T1200",
+  "observed_at": "2026-11-21T11:59:50Z",
+  "window_seconds": 30,
+  "source_ip": "203.0.113.42",
+  "service": "ssh",
+  "transport": "tcp",
+  "destination_ports": [22],
+  "observation": "denied_connection_attempts",
+  "attempts": 40,
+  "proof_level": "unverified_network_log"
+}

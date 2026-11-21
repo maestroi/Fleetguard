@@ -254,12 +254,24 @@ func (e *Engine) reconcile(ctx context.Context) error {
 	} else if e.persisted.Revision > 0 {
 		e.status.OfflineExpired = true
 	}
+	localIDs := make([]string, 0, len(e.local))
 	for id, d := range e.local {
 		if !d.ExpiresAt.After(now) {
 			delete(e.local, id)
 			continue
 		}
-		desired = append(desired, d)
+		localIDs = append(localIDs, id)
+	}
+	slices.Sort(localIDs)
+	for _, id := range localIDs {
+		// Central decisions have priority when at the local cardinality cap.
+		// Never leave previously installed local blocks behind just because a
+		// newly accepted valid central revision filled all available slots.
+		if len(desired) >= e.options.Policy.MaxDecisions {
+			delete(e.local, id)
+			continue
+		}
+		desired = append(desired, e.local[id])
 	}
 	if e.options.Mode == "enforce" {
 		disabled, err := e.options.EmergencyDisabled()
@@ -279,22 +291,29 @@ func (e *Engine) reconcile(ctx context.Context) error {
 			return nil
 		}
 		e.status.Disabled = false
-		caps, err := e.options.Backend.Capabilities(ctx)
-		if err != nil {
-			e.setError(err)
-			return err
-		}
-		runtime := e.options.ManagementPrefixLookup
-		runtime.BackendName = e.options.BackendName
-		runtime.Verified = e.options.HostINPUTVerified
-		runtime.Capabilities = caps
-		// Local sources have been individually approved. Validate the combined
-		// effective state again after TTL pruning, before each firewall mutation.
-		synthetic := protocol.Snapshot{Schema: protocol.SchemaVersion, Revision: 1, IssuedAt: now, ExpiresAt: now.Add(protocol.MaxSnapshotTTL),
-			Audience: e.options.Audience, Decisions: desired, KeyID: "local-reconciled"}
-		if err := e.options.Policy.Authorize(synthetic, e.options.Audience, now, runtime); err != nil {
-			e.setError(err)
-			return err
+		if len(desired) > 0 {
+			caps, err := e.options.Backend.Capabilities(ctx)
+			if err == nil {
+				runtime := e.options.ManagementPrefixLookup
+				runtime.BackendName = e.options.BackendName
+				runtime.Verified = e.options.HostINPUTVerified
+				runtime.Capabilities = caps
+				// Revalidate every live decision before writing any real block.
+				synthetic := protocol.Snapshot{Schema: protocol.SchemaVersion, Revision: 1, IssuedAt: now, ExpiresAt: now.Add(protocol.MaxSnapshotTTL),
+					Audience: e.options.Audience, Decisions: desired, KeyID: "local-reconciled"}
+				err = e.options.Policy.Authorize(synthetic, e.options.Audience, now, runtime)
+			}
+			if err != nil {
+				// On a lost management interface or newly unsupported backend,
+				// prioritise removing temporary drops over retaining stale bans.
+				if removeErr := e.options.Backend.RemoveOwned(ctx); removeErr == nil {
+					e.status.ActiveDecisions = 0
+				} else {
+					return fmt.Errorf("unsafe enforcement %v; owned cleanup also failed: %w", err, removeErr)
+				}
+				e.setError(err)
+				return err
+			}
 		}
 	} else if len(desired) > e.options.Policy.MaxDecisions {
 		err := errors.New("agent: combined decision cap exceeded")

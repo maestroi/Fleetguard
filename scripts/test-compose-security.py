@@ -6,6 +6,7 @@ No PyYAML, Docker API, or third-party packages required.
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -13,6 +14,19 @@ from pathlib import Path
 def require(condition, message):
     if not condition:
         raise SystemExit(f"insecure Compose configuration: {message}")
+
+
+def bytes_limit(value):
+    """Compose may render memory limits as byte counts or e.g. '256m'."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if not isinstance(value, str):
+        return 0
+    parsed = re.fullmatch(r"([0-9]+)([kmgt]?)(?:i?b)?", value.strip().lower())
+    if parsed is None:
+        return 0
+    unit = parsed.group(2)
+    return int(parsed.group(1)) * (1024 ** (" kmgt".index(unit) if unit else 0))
 
 
 def main():
@@ -29,7 +43,8 @@ def main():
     for k in ("network_mode", "pid", "ipc", "cgroup", "devices", "device_cgroup_rules", "cap_add", "group_add"):
         require(not c.get(k), f"privileged option {k} present")
     require(c.get("pids_limit", 0) > 0 and c["pids_limit"] <= 64, "unbounded process count")
-    require(c.get("mem_limit", 0) > 0 and c["mem_limit"] <= 256 * 1024 * 1024, "unbounded memory")
+    memory = bytes_limit(c.get("mem_limit", 0))
+    require(0 < memory <= 256 * 1024 * 1024, "unbounded memory")
     ports = c.get("ports", [])
     require(len(ports) == 1, "unexpected published ports")
     p = ports[0]

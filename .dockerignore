@@ -1,0 +1,10 @@
+# Keep the build context minimal. Any new package imports must be added here.
+**
+!go.mod
+!go.sum
+!cmd/
+!cmd/**
+!internal/
+!internal/**
+!pkg/
+!pkg/**

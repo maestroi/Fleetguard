@@ -12,6 +12,8 @@
 - Every snapshot is **complete, node-specific and empty**, with a finite 2-minute TTL. Its revision is monotonic in SQLite per node/group; retry before expiry returns the same exact signed envelope. No event ever causes a drop decision in this release.
 - No administrative API, arbitrary shell command, dynamic firewall capability, unsigned policy promotion, or live enforcement exists. Acknowledgement states are **client reports**, not proof that firewalld applied a rule.
 
+For a containerized controller that does not require a host-installed Go toolchain or libsqlite3, use the [GHCR image and least-privilege Compose example](container-deployment.md). It runs only the observe-only controller: no Docker socket, extra capabilities, host namespace or real firewall access.
+
 ## Build and private lab setup
 
 Requirements: Go 1.27+, C toolchain and `libsqlite3-dev` (Ubuntu: `sudo apt-get install libsqlite3-dev`). The controller links to the system SQLite C library. Agent and CLI remain pure Go. Linux AMD64 is the supported bootstrap platform.

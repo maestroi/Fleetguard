@@ -1,0 +1,10 @@
+{
+  "mode": "observe",
+  "listen": "172.30.240.10:9443",
+  "tls_cert_file": "/etc/fleetguard/tls.crt",
+  "tls_key_file": "/etc/fleetguard/tls.key",
+  "database_file": "/var/lib/fleetguard/evidence.sqlite",
+  "registry_file": "/etc/fleetguard/registry.json",
+  "signing_key_file": "/etc/fleetguard/signing.key",
+  "signing_key_id": "lab-signer-v1"
+}

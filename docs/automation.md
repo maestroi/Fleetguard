@@ -1,6 +1,6 @@
 # CI, trusted auto-merge, and per-main-commit releases
 
-Fleetguard is experimental. A published GitHub Release is a build artifact, **not** a production-readiness assertion. The controller binary currently needs `libsqlite3` installed on the target Linux host, and all firewall enforcement remains disabled.
+Fleetguard is experimental. A published GitHub Release is a build artifact, **not** a production-readiness assertion. The standalone controller binary currently needs `libsqlite3` installed on the target Linux host, and all firewall enforcement remains disabled.
 
 ## CI policy
 
@@ -33,9 +33,10 @@ Each successful run:
 2. Derives a deterministic pre-1.0 version: `v0.1.N`, where `N` is the number of commits along the first-parent history through that SHA. One completed main-line commit has one stable version, independent of the wall-clock time or of later merges. Existing history means the first release may not be `v0.1.1`.
 3. Re-runs Go checks and race tests with the repo-pinned Go toolchain; any failure prevents release publishing.
 4. Builds `fleetguard-agent`, `fleetguard-controller` and `fleetguardctl` for Linux AMD64, embeds version and commit metadata, and runs the unprivileged smoke test.
-5. Creates a deterministic `fleetguard_v0.1.N_linux_amd64.tar.gz` containing those three binaries, README, LICENSE and VERSION, plus a `SHA256SUMS` file. Uploads these as run artifacts and as assets of a GitHub prerelease tagged `v0.1.N`.
+5. Creates deterministic `fleetguard_v0.1.N_linux_amd64.tar.gz` and `fleetguard_v0.1.N_compose.tar.gz` archives with `SHA256SUMS` covering both. Uploads these as run artifacts and as assets of the GitHub prerelease tagged `v0.1.N`.
+6. Validates Compose's read-only/non-root/capability-free security contract; builds a Linux AMD64 controller Docker image, runs it with no network, no caps and a read-only filesystem, then publishes the tested image as `ghcr.io/maestroi/fleetguard-controller:v0.1.N` and `:sha-<full-main-commit>`.
 
-**Publish destination:** [Fleetguard GitHub Releases](https://github.com/maestroi/Fleetguard/releases). No external registry credentials, personal access token or container registry is required. The release uses the repository-scoped `GITHUB_TOKEN` with `contents: write`.
+**Publish destinations:** [Fleetguard GitHub Releases](https://github.com/maestroi/Fleetguard/releases) and GHCR (`ghcr.io/maestroi/fleetguard-controller`). No external registry credentials or personal access token is required. The release uses repository-scoped `GITHUB_TOKEN` with `contents: write` and `packages: write`. The owner may need to set the GHCR package's visibility to **Public** after its initial publication, or otherwise users must authenticate before pulling.
 
 ### Recovering a failed or interrupted release
 
@@ -43,7 +44,7 @@ If the release job fails, fix the cause and rerun the workflow. Its tag is deriv
 
 ### Release compatibility
 
-The archive is Linux **x86_64/amd64** only, because the controller's SQLite implementation uses CGO. The controller is dynamically linked to system SQLite and must run on a compatible Linux distribution. There is no ARM release yet and no claim of static controller binaries.
+The archive is Linux **x86_64/amd64** only, because the controller's SQLite implementation uses CGO. The controller is dynamically linked to system SQLite and must run on a compatible Linux distribution. The matching Debian-based controller container includes a compatible `libsqlite3-0`, runs as UID 65532, and supports linux/amd64 only. The Compose example is [documented here](container-deployment.md). There is no ARM release yet and no claim of static controller binaries.
 
 ### Trust boundaries
 

@@ -1,0 +1,4 @@
+# Private material must never enter the source repository.
+/private/
+/state/
+/.env

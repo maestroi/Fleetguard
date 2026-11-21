@@ -50,3 +50,16 @@ jobs:
         run: make build
       - name: Unprivileged simulated smoke test
         run: make smoke
+      - name: Validate Compose least-privilege contract
+        run: |
+          docker compose --env-file deploy/controller/.env.example \
+            -f deploy/controller/compose.yaml config --format json > "$RUNNER_TEMP/fleetguard-compose.json"
+          python3 scripts/test-compose-security.py "$RUNNER_TEMP/fleetguard-compose.json"
+      - name: Build and smoke-test unprivileged controller image
+        run: |
+          docker build -f Dockerfile.controller --build-arg VERSION=ci -t fleetguard-controller:ci .
+          test "$(docker image inspect --format '{{.Config.User}}' fleetguard-controller:ci)" = "65532:65532"
+          output="$(docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --user 65532:65532 --pids-limit 64 \
+            fleetguard-controller:ci -version)"
+          case "$output" in *ci*) ;; *) echo "Bad image version: $output" >&2; exit 1;; esac

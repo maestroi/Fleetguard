@@ -52,7 +52,7 @@ Requirements: **Go 1.27+**, `make`, and Linux for the built binaries. Dependenci
 git clone https://github.com/maestroi/Fleetguard.git
 cd Fleetguard
 make check                     # gofmt, tidy, vet, unit tests
-make build                     # static Linux amd64 binaries in dist/
+make build                     # Linux amd64 binaries in dist/ (controller uses SQLite)
 make smoke                     # agent, controller and CLI; no privileges
 ```
 
@@ -95,13 +95,19 @@ The server rejects wildcard/public bind addresses, non-TLS requests, unknown or 
 
 **Go CI** runs on every pull request. After CI passes, only your non-draft, same-repository PRs authored by `maestroi` are automatically squash-merged into `main`; everyone else's PRs still need a manual merge. Owner auto-merge never bypasses GitHub's required checks and validates the exact tested PR SHA.
 
-Every successful `main` update (including bot-performed merges) builds a fresh experimental `v0.1.N` prerelease and uploads a Linux AMD64 tarball and `SHA256SUMS` to [GitHub Releases](https://github.com/maestroi/Fleetguard/releases). The controller requires system `libsqlite3`; no build is production-ready by virtue of being released. See [automation and release details](docs/automation.md). The first workflow PR must be merged manually to activate it; configuring GitHub branch protection is recommended.
+Every successful `main` update (including bot-performed merges) builds a fresh experimental `v0.1.N` prerelease and uploads Linux AMD64 binaries, a Compose bundle and `SHA256SUMS` to [GitHub Releases](https://github.com/maestroi/Fleetguard/releases), and publishes a version-matched GHCR controller image. The controller requires system `libsqlite3`; no build is production-ready by virtue of being released. See [automation and release details](docs/automation.md). The first workflow PR must be merged manually to activate it; configuring GitHub branch protection is recommended.
 
 ## Manual cross-node correlation (issue #6)
 
 A new **offline, observe-only** `fleetguard-controller -evaluate` mode correlates persisted, authenticated evidence into scoped advisory candidates. It requires at least two distinct reporters from independently configured trust domains, application-verified proof, and an operator-controlled service/observation/transport/port allowlist. Raw SYN/UDP logs cannot trigger a candidate, and known shared NAT addresses require explicit manual review. Output is audited locally but **never published to agent snapshots or applied by a firewall**.
 
 Read [the correlation guide](docs/correlation.md) and [example local policy](examples/correlation/lab-policy.example.json). The controller still serves signed **empty** policies.
+
+## Docker controller and Compose
+
+A versioned, **non-root** Linux AMD64 controller image is published to the GitHub Container Registry at `ghcr.io/maestroi/fleetguard-controller:v0.1.N` for each new main release. The matching GitHub Release also includes a Compose bundle and checksums. See [Docker deployment and permissions](docs/container-deployment.md) and [the runnable Compose example](deploy/controller/README.md).
+
+The Compose deployment uses UID/GID 65532, **drops all Linux capabilities**, disables privilege escalation, uses a **read-only root filesystem**, mounts only private read-only credentials plus writable SQLite state, enforces resource limits and exposes HTTPS **only on host loopback**. It does **not** require `NET_ADMIN`, privileged mode, host networking, Docker socket or host firewalld access. No live blocking is implemented. Use an explicit published version tag, not a floating `latest`. The container's GHCR package may need a one-time change to **Public** for anonymous pulls.
 
 ## License and contributions
 

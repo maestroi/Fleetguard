@@ -23,7 +23,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-          cache: false # no external Go dependencies yet, and no go.sum
+          cache: true # D-Bus client module is checksummed in go.sum
       - name: Install SQLite C headers (controller only)
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
       - name: Format check

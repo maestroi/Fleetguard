@@ -1,0 +1,15 @@
+{
+  "node_id": "lab-node-a",
+  "service_group": "lab-ssh",
+  "mode": "observe",
+  "firewall_backend": "simulated",
+  "controller_url": "https://127.0.0.1:9443",
+  "tls_ca_file": "/replace/with/controller-ca.pem",
+  "token_file": "/replace/with/lab-node-a.token",
+  "trusted_keys_file": "/replace/with/trusted-keys.json",
+  "safety_policy_file": "/replace/with/safety.json",
+  "state_dir": "/replace/with/agent-state",
+  "poll_interval_seconds": 5,
+  "reconcile_interval_seconds": 1,
+  "max_offline_age_seconds": 90
+}

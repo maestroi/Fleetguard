@@ -25,7 +25,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: fleetguardctl version | check-config -kind agent|controller -config FILE | simulate [-a FILE] [-b FILE] [-at RFC3339] | check-safety -config FILE | emergency-disable [-state-dir DIR] | hash-token (stdin) | generate-signing-key -private FILE -public FILE")
+	fmt.Fprintln(os.Stderr, "usage: fleetguardctl version | check-config -kind agent|controller -config FILE | simulate [-a FILE] [-b FILE] [-at RFC3339] | check-safety -config FILE | emergency-disable [-state-dir DIR] [-runtime-config FILE] | hash-token (stdin) | generate-signing-key -private FILE -public FILE")
 }
 
 func main() {

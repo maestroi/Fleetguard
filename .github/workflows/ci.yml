@@ -46,6 +46,8 @@ jobs:
           grep -q '^name: fg1_1249d4bd57f69425$' <<<"$output"
           grep -q '<option name="family" value="inet"/>' <<<"$output"
           test "$(grep -c '<ipset type=' <<<"$output")" -eq 1
+      - name: Agent signed-policy recovery, bounded polling and rootless offline tests
+        run: go test -count=1 ./internal/agent/...
       - name: Controller auth / SQLite / HTTPS regression tests
         run: go test -count=1 ./internal/controller/... ./pkg/protocol
       - name: Release and auto-merge policy tests

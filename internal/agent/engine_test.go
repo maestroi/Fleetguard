@@ -153,7 +153,7 @@ func TestFileStorePrivateAtomicPersistence(t *testing.T){
  if err:=os.Chmod(dir,0700);err!=nil{t.Fatal(err)}
  store:=FileStore{Dir:dir}
  if _,err:=store.Load();err!=nil{t.Fatal(err)}
- e,_,now,priv,_:=fixture(t,"observe")
+ _,_,now,_,_:=fixture(t,"observe")
  state:=DurableState{Version:1,Revision:1,Signed:&protocol.SignedSnapshot{},AcceptedAt:*now}
  if err:=store.Save(state);err!=nil{t.Fatal(err)}
  loaded,err:=store.Load();if err!=nil || loaded.Revision!=1{t.Fatal("load persisted state",err)}

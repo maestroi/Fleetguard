@@ -1,0 +1,19 @@
+{
+  "node_id": "lab-node-a",
+  "service_group": "lab-ssh",
+  "mode": "enforce",
+  "firewall_backend": "firewalld",
+  "controller_url": "https://127.0.0.1:9443",
+  "tls_ca_file": "/etc/fleetguard/controller-ca.pem",
+  "token_file": "/etc/fleetguard/lab-node-a.token",
+  "trusted_keys_file": "/etc/fleetguard/trusted-keys.json",
+  "safety_policy_file": "/etc/fleetguard/safety.json",
+  "state_dir": "/var/lib/fleetguard",
+  "poll_interval_seconds": 5,
+  "reconcile_interval_seconds": 1,
+  "max_offline_age_seconds": 90,
+  "zone": "public",
+  "bindings": [{"Service":"ssh","Transport":"tcp","Port":2222}],
+  "host_input_verified": true,
+  "lab_confirm": "disposable-vm-console-ready"
+}

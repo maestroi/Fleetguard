@@ -1,13 +1,13 @@
 # Local host safety and offline emergency disable (issue #7)
 
-**No real firewall enforcement ships in this release.** The protocol, controller and current agent are still observe-only. This change adds the independent local authorization boundary and a persistent emergency latch for future firewalld support. Do not use it as a replacement for existing firewalld/Tailscale policy. The backend in issue #8 and agent reconciler in issue #9 must integrate these gates before any live blocks.
+**No real firewall enforcement is enabled by default.** The protocol, controller and current agent are still observe-only. This change adds the independent local authorization boundary and a persistent emergency latch for future firewalld support. Do not use it as a replacement for existing firewalld/Tailscale policy. The separately opt-in issue #9 agent runtime integrates these gates, but real INPUT/management packet tests remain mandatory before enabling live blocks.
 
 ## Root-managed policy
 
 Copy `examples/safety-policy.json` to `/etc/fleetguard/safety.json`, substitute real management IPs and local interfaces, and create it root-owned with mode `0600` in a root-owned, non-writable-to-other-users directory. The example uses documentation-only IPs.
 
 ```sh
-sudo install -d -o root -g root -m 0700 /etc/fleetguard /run/fleetguard
+sudo install -d -o root -g root -m 0700 /etc/fleetguard /var/lib/fleetguard
 sudo install -o root -g root -m 0600 examples/safety-policy.json /etc/fleetguard/safety.json
 fleetguardctl check-safety -config /etc/fleetguard/safety.json
 ```
@@ -23,10 +23,10 @@ The safety gate verifies a signed snapshot's signature, revision, audience and t
 ## Offline disable and recovery
 
 ```sh
-sudo fleetguardctl emergency-disable -state-dir /run/fleetguard
+sudo fleetguardctl emergency-disable -state-dir /var/lib/fleetguard \\\n  -runtime-config /etc/fleetguard/agent-runtime.json
 ```
 
-The command needs no controller or network. It creates an on-disk root-owned `/run/fleetguard/emergency-disabled` latch, refuses unsafe paths, and is idempotent. The future agent must refuse new enforcement whenever the latch exists (or its state cannot be checked). It must also remove **only** adapter-owned runtime objects through `Backend.RemoveOwned` — never reload firewalld, flush system-wide tables, or edit permanent/foreign rules. The mock backend has an offline unit test proving only its own entries are removed. **At present there is no live backend to remove**, and the CLI reports that limitation instead of asserting firewall cleanup.
+The command needs no controller or network. It creates an on-disk root-owned `/run/fleetguard/emergency-disabled` latch, refuses unsafe paths, and is idempotent. The opt-in #9 runtime agent refuses new enforcement whenever the latch exists (or its state cannot be checked). It must also remove **only** adapter-owned runtime objects through `Backend.RemoveOwned` — never reload firewalld, flush system-wide tables, or edit permanent/foreign rules. The mock backend has an offline unit test proving only its own entries are removed. The CLI can also instantiate the locally configured firewalld backend with `-runtime-config` to immediately clear owned runtime objects; without it, the running agent detects and clears on its next tick.
 
 For an actual lockout, access the disposable VM through Proxmox/provider console; stop the agent service, check the emergency marker, inspect firewalld ownership and rule ordering, then remove only confirmed Fleetguard-owned runtime objects. Do not rely on remote SSH/Tailscale as the sole recovery path. Confirm Tailscale access and controller reachability from independent hosts *before* and *after* the first firewalld VM test; a matching allow rule in one nftables chain may not override a drop in another.
 

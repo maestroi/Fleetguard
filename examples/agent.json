@@ -1,0 +1,5 @@
+{
+  "node_id": "lab-node-a",
+  "mode": "observe",
+  "firewall_backend": "simulated"
+}

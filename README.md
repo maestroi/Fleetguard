@@ -2,7 +2,7 @@
 
 **Fleet-wide threat detection and safe, distributed firewall enforcement.**
 
-> **Status: design / proof of concept.** No production-ready agent or controller exists yet. Do not deploy to critical systems.
+> **Status: experimental bootstrap / proof of concept.** The binaries currently validate local configuration and print simulated state only. No network services, sensors, policy issuance or firewall enforcement exist yet. Do not deploy to critical systems.
 
 Fleetguard is an open-source Go project exploring a hybrid approach to host network defense:
 
@@ -40,8 +40,37 @@ See [GitHub Issues](https://github.com/maestroi/Fleetguard/issues) for the imple
 
 ## Implementation status
 
-This repository is currently bootstrapped with a design-only README. Do not assume any of the components described above have been implemented.
+The Go monorepo contains buildable command-line entry points and a simulated, observe-only startup path. It does **not** yet run a persistent agent/controller, detect attacks, communicate over a network, or manage firewall rules.
+
+## Developer quickstart (safe simulation only)
+
+Requirements: **Go 1.27+**, `make`, and Linux for the built binaries. Dependencies are standard-library-only.
+
+```sh
+git clone https://github.com/maestroi/Fleetguard.git
+cd Fleetguard
+make check                     # gofmt, tidy, vet, unit tests
+make build                     # static Linux amd64 binaries in dist/
+make smoke                     # agent, controller and CLI; no privileges
+```
+
+Run individual entry points (one-shot status output, not long-running daemons):
+
+```sh
+go run ./cmd/fleetguard-agent -config examples/agent.json
+go run ./cmd/fleetguard-controller -config examples/controller.json
+go run ./cmd/fleetguardctl check-config -kind agent -config examples/agent.json
+go run ./cmd/fleetguardctl version
+```
+
+Configurations are strict, local JSON files. The agent accepts **only** `mode: "observe"` and `firewall_backend: "simulated"`; a different mode or backend is rejected. The controller accepts only `mode: "observe"`. No example contains real credentials or production defaults. The simulator does not create firewall rules, listen on sockets, send telemetry or issue policies. For the complete intended architecture, see design PR #1.
+
+Build metadata defaults to `VERSION=dev`, `COMMIT=<git short SHA>` and `BUILD_DATE=unknown`. To label a build reproducibly:
+
+```sh
+make build VERSION=v0.0.0-dev COMMIT=local-test BUILD_DATE=unknown
+```
 
 ## License and contributions
 
-License and contribution guidelines will be added during repository setup. Until a license file is present, **no open-source usage license is granted by default**.
+Licensed under [Apache-2.0](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md) for the PR and testing workflow and [SECURITY.md](SECURITY.md) for private vulnerability reporting.

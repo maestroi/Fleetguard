@@ -6,20 +6,29 @@
 
 The upstream firewalld D-Bus runtime API exposes `org.fedoraproject.FirewallD1.ipset.addEntry/removeEntry/getEntries`, but **creating an IP set is a permanent-configuration operation** (`org.fedoraproject.FirewallD1.config.addIPSet`). The adapter deliberately never calls that permanent method, never invokes `firewall-cmd`, reloads firewalld, or installs direct/iptables/nftables commands. A *local operator* may provision one labeled empty `hash:ip` set per enabled service/protocol/port before running disposable-VM tests.
 
-Each set is named `fg1_<first 16 hex digits of SHA256(zone + NUL + group + NUL + service + NUL + transport + NUL + decimal port)>`; description must equal `Fleetguard runtime entries v1 <set name>`. The set MUST have `hash:ip`, `family=inet`, **no timeout** and an initially empty entries list. Runtime entries can then be reconciled and enumerated for verification. A timeout-enabled kernel set is explicitly refused because firewalld's D-Bus API cannot enumerate its timed entries.
+Each set is named `fg1_<first 16 hex digits of SHA256(zone + NUL + node + NUL + group + NUL + service + NUL + transport + NUL + decimal port)>`; description must equal `Fleetguard runtime entries v1 <set name>`. The set MUST have `hash:ip`, `family=inet`, **no timeout** and an initially empty entries list. Runtime entries can then be reconciled and enumerated for verification. A timeout-enabled kernel set is explicitly refused because firewalld's D-Bus API cannot enumerate its timed entries.
 
 ```sh
 # All commands below are for an isolated disposable VM only.
-# Use a local generator or inspect the SetName/SetDescription helpers to
+# Use scripts/plan-firewalld-set.py or inspect the SetName/SetDescription helpers to
 # calculate the exact name for your chosen zone/group/service/transport/port.
 # Example conceptual parameters:
-#   zone=public group=rpc service=web transport=tcp port=8899
+#   zone=public node=lab-a group=rpc service=web transport=tcp port=8899
 #
 # Operator: provision /etc/firewalld/ipsets/<derived-name>.xml with
 # type=hash:ip, option family=inet, the EXACT generated description and
 # no entries. Then reload firewalld during a scheduled local setup window.
 # The Fleetguard adapter itself never executes these operations.
 ```
+
+Generate a proposed set definition locally (prints to stdout; no host changes):
+
+```sh
+python3 scripts/plan-firewalld-set.py --zone public --node lab-a \\
+  --group rpc --service web --protocol tcp --port 8899
+```
+
+Copy the emitted XML into a root-managed `/etc/firewalld/ipsets/<set-name>.xml` on the disposable VM, and perform a one-time operator-controlled firewalld reload. This manual provisioning is not part of the Fleetguard agent's runtime operations.
 
 After provisioning, verify it with `firewall-cmd --info-ipset=<derived-name>` (operator diagnostics only), then run the adapter read-only `Capabilities` check. The adapter doesn't mutate permanent sets; `RemoveOwned` clears their **runtime entries** and the exact generated runtime rich rules without removing the set definitions.
 

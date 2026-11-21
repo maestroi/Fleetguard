@@ -84,7 +84,7 @@ type Options struct {
 // service groups, transports and ports difficult. It is never accepted from
 // a remote payload or chosen by a controller.
 func SetName(zone string, audience protocol.Audience, binding Binding) string {
-	data := zone + "\x00" + audience.ServiceGroup + "\x00" + binding.Service + "\x00" + string(binding.Transport) + "\x00" + strconv.Itoa(int(binding.Port))
+	data := zone + "\x00" + audience.NodeID + "\x00" + audience.ServiceGroup + "\x00" + binding.Service + "\x00" + string(binding.Transport) + "\x00" + strconv.Itoa(int(binding.Port))
 	h := sha256.Sum256([]byte(data))
 	return setPrefix + hex.EncodeToString(h[:8])
 }

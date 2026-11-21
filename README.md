@@ -91,6 +91,12 @@ make build
 
 The server rejects wildcard/public bind addresses, non-TLS requests, unknown or revoked nodes, evidence identity spoofing, unauthorized service groups and stale/oversized evidence. **It never promotes events into enforcement decisions**; that is separate, security-gated work in issues #6–#9.
 
+## Automated merging and releases
+
+**Go CI** runs on every pull request. After CI passes, only your non-draft, same-repository PRs authored by `maestroi` are automatically squash-merged into `main`; everyone else's PRs still need a manual merge. Owner auto-merge never bypasses GitHub's required checks and validates the exact tested PR SHA.
+
+Every successful `main` update (including bot-performed merges) builds a fresh experimental `v0.1.N` prerelease and uploads a Linux AMD64 tarball and `SHA256SUMS` to [GitHub Releases](https://github.com/maestroi/Fleetguard/releases). The controller requires system `libsqlite3`; no build is production-ready by virtue of being released. See [automation and release details](docs/automation.md). The first workflow PR must be merged manually to activate it; configuring GitHub branch protection is recommended.
+
 ## License and contributions
 
 Licensed under [Apache-2.0](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md) for the PR and testing workflow and [SECURITY.md](SECURITY.md) for private vulnerability reporting.

@@ -36,7 +36,12 @@ In an isolated VM lab: one controller + two firewalld agents + a controlled traf
 
 ## Roadmap
 
-See [GitHub Issues](https://github.com/maestroi/Fleetguard/issues) for the implementation backlog. Architecture, threat model, and lab test plans will be proposed in a design pull request.
+See [GitHub Issues](https://github.com/maestroi/Fleetguard/issues) for the implementation backlog. The design is documented in:
+- [Architecture and protocol sketch](docs/architecture.md)
+- [Threat model and safety requirements](docs/threat-model.md)
+- [Isolated homelab POC test plan](docs/homelab-poc.md)
+- [ADR 0001: firewalld-first backend](docs/adr/0001-firewalld-first.md)
+- [ADR 0002: role-based exposure profiles](docs/adr/0002-exposure-profiles.md)
 
 ## Implementation status
 
@@ -65,7 +70,7 @@ go run ./cmd/fleetguardctl check-config -kind agent -config examples/agent.json
 go run ./cmd/fleetguardctl version
 ```
 
-Configurations are strict, local JSON files. The agent accepts **only** `mode: "observe"` and `firewall_backend: "simulated"`; a different mode or backend is rejected. The controller accepts only `mode: "observe"`. No example contains real credentials or production defaults. The simulator does not create firewall rules, listen on sockets, send telemetry or issue policies. For the complete intended architecture, see design PR #1.
+Configurations are strict, local JSON files. The agent accepts **only** `mode: "observe"` and `firewall_backend: "simulated"`; a different mode or backend is rejected. The controller accepts only `mode: "observe"`. No example contains real credentials or production defaults. The simulator does not create firewall rules, listen on sockets, send telemetry or issue policies. For the complete intended architecture, see [docs/architecture.md](docs/architecture.md).
 
 Build metadata defaults to `VERSION=dev`, `COMMIT=<git short SHA>` and `BUILD_DATE=unknown`. To label a build reproducibly:
 

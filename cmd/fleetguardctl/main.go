@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/maestroi/Fleetguard/internal/agent"
 	"github.com/maestroi/Fleetguard/internal/lab"
 
 	"github.com/maestroi/Fleetguard/internal/buildinfo"
@@ -24,7 +25,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: fleetguardctl version | check-config -kind agent|controller -config FILE | simulate [-a FILE] [-b FILE] [-at RFC3339] | check-safety -config FILE | emergency-disable [-state-dir DIR] | hash-token (stdin) | generate-signing-key -private FILE -public FILE")
+	fmt.Fprintln(os.Stderr, "usage: fleetguardctl version | check-config -kind agent|controller -config FILE | simulate [-a FILE] [-b FILE] [-at RFC3339] | check-safety -config FILE | emergency-disable [-state-dir DIR] [-runtime-config FILE] | hash-token (stdin) | generate-signing-key -private FILE -public FILE")
 }
 
 func main() {
@@ -52,17 +53,50 @@ func main() {
 		fmt.Println("local safety policy syntax valid (this does not enable enforcement)")
 	case "emergency-disable":
 		flags := flag.NewFlagSet("emergency-disable", flag.ExitOnError)
-		dir := flags.String("state-dir", "/run/fleetguard", "pre-existing root-owned state directory")
+		dir := flags.String("state-dir", "/var/lib/fleetguard", "persistent root-owned state directory")
+		configured := flags.String("runtime-config", "", "optional privileged VM config for immediate D-Bus cleanup")
 		flags.Parse(os.Args[2:])
 		if flags.NArg() != 0 {
 			usage()
 			os.Exit(2)
 		}
+		// Latch first even when connecting to firewalld fails. The running
+		// agent checks this file on each reconcile and removes owned rules.
 		if err := safety.EmergencyDisable(context.Background(), *dir, nil); err != nil {
 			fmt.Fprintln(os.Stderr, "emergency-disable:", err)
 			os.Exit(1)
 		}
-		fmt.Println("emergency kill switch latched locally; this build has no live firewall backend or rules to remove")
+		if *configured == "" {
+			fmt.Println("emergency kill switch latched; running agent removes owned rules on next reconcile; use -runtime-config for immediate D-Bus cleanup")
+			return
+		}
+		if err := safety.CheckRootOwnedFile(*configured); err != nil {
+			fmt.Fprintln(os.Stderr, "emergency latch is set but configuration is unsafe:", err)
+			os.Exit(1)
+		}
+		c, err := agent.LoadRuntimeConfig(*configured)
+		if err != nil || c.Mode != "enforce" || c.StateDir != *dir {
+			fmt.Fprintln(os.Stderr, "emergency latch set but privileged runtime config/state directory mismatch:", err)
+			os.Exit(1)
+		}
+		policy, err := c.LoadPolicy()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "emergency latch set but local policy unavailable:", err)
+			os.Exit(1)
+		}
+		backend, closeBackend, err := agent.BuildRealBackend(c, policy)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "emergency latch set but D-Bus backend unavailable:", err)
+			os.Exit(1)
+		}
+		defer closeBackend()
+		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
+		defer stop()
+		if err := backend.RemoveOwned(cleanup); err != nil {
+			fmt.Fprintln(os.Stderr, "emergency latch set but removing owned rules failed:", err)
+			os.Exit(1)
+		}
+		fmt.Println("emergency disabled; confirmed owned runtime IP-set entries and scoped rich rules removed")
 	case "hash-token":
 		if len(os.Args) != 2 {
 			usage()

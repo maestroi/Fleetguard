@@ -190,6 +190,20 @@ func (p Policy) Authorize(s protocol.Snapshot, expected protocol.Audience, now t
 	if runtime.BackendName != "firewalld" || !runtime.Verified || runtime.Capabilities.Simulated || !runtime.Capabilities.IPv4 || !runtime.Capabilities.ScopedPorts {
 		return reject("unverified_backend", "", "backend and port-scoped INPUT rule ordering must be independently verified")
 	}
+	return p.CheckCandidate(s, expected, now, runtime)
+}
+
+// CheckCandidate validates locally protected source addresses, service scopes,
+// expiration and audience, including in observe-only mode. It deliberately
+// DOES NOT authorize actual firewall writes: enforcement must call Authorize
+// after checking a real, attested backend and the local emergency latch.
+func (p Policy) CheckCandidate(s protocol.Snapshot, expected protocol.Audience, now time.Time, runtime Runtime) error {
+	if err := p.Validate(); err != nil {
+		return reject("invalid_local_policy", "", err.Error())
+	}
+	if err := protocol.ValidateSnapshot(s); err != nil {
+		return err
+	}
 	if expected.NodeID == "" || expected.ServiceGroup == "" || s.Audience.ServiceGroup != expected.ServiceGroup || (s.Audience.NodeID != "" && s.Audience.NodeID != expected.NodeID) {
 		return reject("audience_mismatch", "", "signed audience is outside this node/service group")
 	}

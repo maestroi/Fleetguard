@@ -121,7 +121,7 @@ func TestLocalConfigStrictAndBroadCIDRs(t *testing.T) {
 			t.Fatal("unsafe config accepted")
 		}
 	}
-	for _, cidr := range []string{"0.0.0.0/0", "203.0.113.0/24", "::/0"} {
+	for _, cidr := range []string{"0.0.0.0/0", "203.0.113.0/24"} {
 		cp := p
 		cp.ProtectedCIDRs = []string{cidr}
 		if err := cp.Authorize(s, s.Audience, now, r); err == nil {

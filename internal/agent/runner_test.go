@@ -2,9 +2,6 @@ package agent
 
 import (
  "context"
- "crypto/ed25519"
- "crypto/tls"
- "crypto/x509"
  "encoding/pem"
  "encoding/json"
  "net/http"
@@ -84,10 +81,6 @@ func TestPinnedTLSAndNodeCredentials(t *testing.T){
  p:=&Poller{Engine:e,Client:transport}
  if err:=p.PollOnce(context.Background());err!=nil{t.Fatal(err)}
  if received!=1 || acks!=1{t.Fatalf("transport fetch=%d ack=%d",received,acks)}
- wrongCert:=&tls.Certificate{}
- _=wrongCert
- _=x509.NewCertPool()
- _,_ = ed25519.GenerateKey(nil) // compile guard for imported crypto types
 }
 func TestConfigStrictModes(t *testing.T){
  valid:=RuntimeConfig{

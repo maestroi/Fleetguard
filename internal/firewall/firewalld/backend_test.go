@@ -317,6 +317,9 @@ func TestExpiryAndContext(t *testing.T) {
 	}
 }
 func TestNameDomainSeparation(t *testing.T) {
+	if got := SetName("public", protocol.Audience{NodeID: "lab-a", ServiceGroup: "rpc"}, Binding{Service: "web", Transport: protocol.TransportTCP, Port: 8899}); got != "fg1_1249d4bd57f69425" {
+		t.Fatalf("set-name contract changed: %s", got)
+	}
 	a := protocol.Audience{NodeID: "node-a", ServiceGroup: "rpc"}
 	b := Binding{Service: "web", Transport: protocol.TransportTCP, Port: 443}
 	n := SetName("public", a, b)

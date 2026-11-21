@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/netip"
 	"reflect"
 	"testing"
 	"time"
@@ -333,8 +332,10 @@ func TestNameDomainSeparation(t *testing.T) {
 	if n == SetName("public", a, b) {
 		t.Fatal("protocols share set")
 	}
-	// Constructor never takes untrusted set names.
-	_ = netip.MustParsePrefix("203.0.113.0/24")
+	a.NodeID = "node-b"
+	if n == SetName("public", a, Binding{Service: "web", Transport: protocol.TransportTCP, Port: 443}) {
+		t.Fatal("distinct local node identities share a set")
+	}
 }
 
 func BenchmarkReconcile(b *testing.B) {

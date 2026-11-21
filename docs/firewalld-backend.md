@@ -69,6 +69,32 @@ Use 4 isolated Proxmox VMs with host console/snapshots; no production networks. 
 5. Partition the controller, restart firewalld, restart the agent and exercise the emergency command. Verify only owned runtime state is removed and unexpired authorized decisions return only after valid signed state is recovered.
 6. Repeat with iptables backend, absent sets, source-based zone mapping, extra active zone and Docker-published forwarding; each must refuse to claim support, with no new D-Bus writes. Document exact tested firewalld/nftables packet-path behavior.
 
+A build-tagged destructive integration harness performs live, single-set D-Bus
+reconcile/inspect/owned cleanup and checks that unrelated rich rules remain
+unchanged. It is **not** run by ordinary CI. To run it after local policy,
+pre-provisioned set and console recovery are verified on a disposable VM:
+
+```sh
+sudo env FLEETGUARD_LAB_CONFIRM=disposable-vm-console-ready \\
+  FLEETGUARD_TEST_POLICY=/etc/fleetguard/safety.json \\
+  FLEETGUARD_TEST_ZONE=public FLEETGUARD_TEST_NODE=lab-a \\
+  FLEETGUARD_TEST_GROUP=rpc FLEETGUARD_TEST_SERVICE=web \\
+  FLEETGUARD_TEST_SOURCE=192.0.2.42/32 FLEETGUARD_TEST_PORT=8899 \\
+  go test -tags=firewalld_integration -run '^TestDisposableVMReconcile ./internal/firewall/firewalld -run '^$' -bench BenchmarkReconcile -benchmem`. These are **mock D-Bus call-plan/validation** timings, not kernel or bus throughput numbers. 10,000 is a deliberate early rejection measurement. Real D-Bus latency and the four-VM packet-path tests are outstanding acceptance gates for #8/#11.
+
+## References
+- [Upstream firewalld D-Bus API](https://firewalld.org/documentation/man-pages/firewalld.dbus)
+- [Rich rule ordering](https://firewalld.org/documentation/man-pages/firewalld.richlanguage.html)
+- [Local safety and emergency recovery](local-safety.md)
+- [Firewalld ADR](adr/0001-firewalld-first.md)
+ -count=1 -v ./internal/firewall/firewalld
+```
+
+Replace documentation addresses and service names with the isolated VM's
+approved source/port and configured locally protected policy; also prove with
+external traffic captures that **only** that host INPUT port drops. The harness
+must not be mistaken for the broader four-VM packet-path acceptance test.
+
 Rootless benchmarks: `go test ./internal/firewall/firewalld -run '^$' -bench BenchmarkReconcile -benchmem`. These are **mock D-Bus call-plan/validation** timings, not kernel or bus throughput numbers. 10,000 is a deliberate early rejection measurement. Real D-Bus latency and the four-VM packet-path tests are outstanding acceptance gates for #8/#11.
 
 ## References

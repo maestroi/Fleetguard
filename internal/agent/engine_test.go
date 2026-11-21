@@ -164,6 +164,4 @@ func TestFileStorePrivateAtomicPersistence(t *testing.T){
  if err:=os.Remove(filepath.Join(dir,stateFilename));err!=nil{t.Fatal(err)}
  if err:=os.Symlink("/etc/passwd",filepath.Join(dir,stateFilename));err!=nil{t.Fatal(err)}
  if _,err:=store.Load();err==nil{t.Fatal("followed state symlink")}
- _=e
- _=priv
 }

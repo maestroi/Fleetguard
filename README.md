@@ -36,7 +36,11 @@ In an isolated VM lab: one controller + two firewalld agents + a controlled traf
 
 ## Roadmap
 
-See [GitHub Issues](https://github.com/maestroi/Fleetguard/issues) for the implementation backlog. Architecture, threat model, and lab test plans will be proposed in a design pull request.
+See [GitHub Issues](https://github.com/maestroi/Fleetguard/issues) for the implementation backlog. The design is documented in:
+- [Architecture and protocol sketch](docs/architecture.md)
+- [Threat model and safety requirements](docs/threat-model.md)
+- [Isolated homelab POC test plan](docs/homelab-poc.md)
+- [ADR 0001: firewalld-first backend](docs/adr/0001-firewalld-first.md)
 
 ## Implementation status
 

@@ -38,6 +38,10 @@ jobs:
         run: go test -count=1 ./internal/firewall/mock ./internal/sensor/synthetic ./internal/lab
       - name: Controller auth / SQLite / HTTPS regression tests
         run: go test -count=1 ./internal/controller/... ./pkg/protocol
+      - name: Release and auto-merge policy tests
+        run: |
+          bash scripts/test-release-version.sh
+          bash scripts/test-eligible-owner-pr.sh
       - name: Unit tests (race detector)
         run: go test -race ./...
       - name: Build Linux amd64 binaries

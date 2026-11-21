@@ -1,0 +1,129 @@
+# Every user push/merge to main gets its own versioned GitHub Release.
+# Auto-merges performed with GITHUB_TOKEN use workflow_dispatch instead.
+name: Publish release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Exact merged main commit SHA (optional, for bot merges)
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+# GitHub's queue: max avoids replacing pending releases under rapid merges.
+concurrency:
+  group: fleetguard-release-main
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out full main history
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Validate main commit and select version
+        id: version
+        shell: bash
+        env:
+          REQUESTED_SHA: ${{ inputs.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'Invalid release SHA.' >&2
+            exit 1
+          fi
+          # The release can only target a commit on main's first-parent line.
+          # This rejects arbitrary PR/fork commits and keeps numbering monotonic.
+          git fetch origin main --no-tags
+          if ! git rev-list --first-parent origin/main | grep -Fx "$REQUESTED_SHA" >/dev/null; then
+            echo 'Commit is not on the first-parent history of main.' >&2
+            exit 1
+          fi
+          git checkout --detach "$REQUESTED_SHA"
+          tag="$(bash scripts/release-version.sh "$REQUESTED_SHA")"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$REQUESTED_SHA" >> "$GITHUB_OUTPUT"
+          echo "Building release $tag for $REQUESTED_SHA"
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Install SQLite headers for controller
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+
+      - name: Verify release source
+        run: |
+          make check
+          go test -race ./...
+          bash scripts/test-release-version.sh
+
+      - name: Build, smoke-test, and package Linux AMD64
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_SHA: ${{ steps.version.outputs.sha }}
+        run: |
+          set -euo pipefail
+          make build VERSION="$RELEASE_TAG" COMMIT="${RELEASE_SHA:0:12}" BUILD_DATE=unknown
+          make smoke
+          mkdir -p release/stage
+          cp dist/fleetguard-agent dist/fleetguard-controller dist/fleetguardctl release/stage/
+          cp README.md LICENSE release/stage/
+          printf '%s\n' "$RELEASE_TAG" > release/stage/VERSION
+          archive="fleetguard_${RELEASE_TAG}_linux_amd64.tar.gz"
+          tar --sort=name --owner=0 --group=0 --numeric-owner \
+            --mtime="@$(git show -s --format=%ct "$RELEASE_SHA")" \
+            -czf "release/$archive" -C release/stage .
+          (cd release && sha256sum "$archive" > SHA256SUMS)
+          echo "Asset: release/$archive"
+
+      - name: Upload CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fleetguard-${{ steps.version.outputs.tag }}-linux-amd64
+          path: |
+            release/*.tar.gz
+            release/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create or repair GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_SHA: ${{ steps.version.outputs.sha }}
+        run: |
+          set -euo pipefail
+          archive="release/fleetguard_${RELEASE_TAG}_linux_amd64.tar.gz"
+          if gh release view "$RELEASE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            # Never replace the assets of a tag pointing to another commit.
+            git fetch origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+            actual="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+            [[ "$actual" == "$RELEASE_SHA" ]] || {
+              echo "Tag $RELEASE_TAG points to unexpected commit $actual" >&2
+              exit 1
+            }
+            gh release upload "$RELEASE_TAG" "$archive" release/SHA256SUMS \
+              --repo "$GH_REPO" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$archive" release/SHA256SUMS \
+              --repo "$GH_REPO" --target "$RELEASE_SHA" \
+              --title "$RELEASE_TAG" --prerelease \
+              --notes "Experimental Fleetguard build from main at $RELEASE_SHA. Observe-only by default; not production ready. The controller binary requires system libsqlite3. See README and SHA256SUMS."
+          fi

@@ -1,0 +1,98 @@
+# The privileged workflow runs from main. Never check out PR code here.
+# Only same-repository, non-draft PRs authored by maestroi are eligible.
+name: Auto-merge owner PRs
+
+on:
+  workflow_run:
+    workflows: ["Go CI"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: fleetguard-automerge-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  merge:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out trusted merge policy from main (never PR code)
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Squash-merge eligible, current-head owner PR and dispatch release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          CI_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          CI_HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$CI_HEAD_REPO" != "$GH_REPO" ]]; then
+            echo "Not a same-repository CI run; skipping."
+            exit 0
+          fi
+
+          # Get PRs from the authenticated workflow run, with a commit-to-PR
+          # fallback for GitHub's sometimes-empty workflow_run.pull_requests.
+          run_json="$(gh api "repos/$GH_REPO/actions/runs/$CI_RUN_ID")"
+          if [[ "$(jq -r .conclusion <<<"$run_json")" != success ]] ||
+             [[ "$(jq -r .event <<<"$run_json")" != pull_request ]] ||
+             [[ "$(jq -r .head_sha <<<"$run_json")" != "$CI_HEAD_SHA" ]]; then
+            echo "Workflow run changed or is not a successful PR check."
+            exit 1
+          fi
+          candidates="$(jq -r '.pull_requests[]?.number' <<<"$run_json")"
+          if [[ -z "$candidates" ]]; then
+            for attempt in 1 2 3 4 5; do
+              candidates="$(gh api "repos/$GH_REPO/commits/$CI_HEAD_SHA/pulls" \
+                --jq '.[].number')"
+              [[ -n "$candidates" ]] && break
+              sleep 3
+            done
+          fi
+          if [[ -z "$candidates" ]]; then
+            echo "No PR associated with passing CI; leaving it unmerged."
+            exit 0
+          fi
+
+          while IFS= read -r pr; do
+            [[ "$pr" =~ ^[0-9]+$ ]] || continue
+            pr_json="$(gh api "repos/$GH_REPO/pulls/$pr")"
+            # Evaluate the exact same owner/scope/SHA gate exercised in CI.
+            if ! bash scripts/eligible-owner-pr.sh "$GH_REPO" "$CI_HEAD_SHA" \
+              <<<"$pr_json" >/dev/null; then
+              echo "PR #$pr is not an eligible current-head owner PR; skipping."
+              continue
+            fi
+
+            # GitHub rejects merges if the head changed between check and PUT.
+            # Never use --admin or bypass required checks/reviews.
+            echo "Merging owner PR #$pr after successful Go CI at $CI_HEAD_SHA"
+            merge_json="$(gh api --method PUT "repos/$GH_REPO/pulls/$pr/merge" \
+              -f merge_method=squash -f sha="$CI_HEAD_SHA")"
+            merge_sha="$(jq -r '.sha // empty' <<<"$merge_json")"
+            if [[ ! "$merge_sha" =~ ^[[:xdigit:]]{40}$ ]] ||
+               [[ "$(jq -r '.merged' <<<"$merge_json")" != true ]]; then
+              echo "GitHub did not confirm the merge for PR #$pr."
+              exit 1
+            fi
+
+            # GITHUB_TOKEN merges don't emit push-triggered Actions workflows.
+            # workflow_dispatch does, so explicitly publish this exact commit.
+            gh workflow run release.yml --repo "$GH_REPO" --ref main -f sha="$merge_sha"
+            echo "PR #$pr merged at $merge_sha; release workflow dispatched."
+            exit 0
+          done <<<"$(sort -un <<<"$candidates")"

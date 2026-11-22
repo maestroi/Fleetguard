@@ -28,14 +28,15 @@ const maxFile = 64 << 10
 var idPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
 type ServerConfig struct {
-	Mode           string `json:"mode"`
-	Listen         string `json:"listen"`
-	TLSCertFile    string `json:"tls_cert_file"`
-	TLSKeyFile     string `json:"tls_key_file"`
-	DatabaseFile   string `json:"database_file"`
-	RegistryFile   string `json:"registry_file"`
-	SigningKeyFile string `json:"signing_key_file"`
-	SigningKeyID   string `json:"signing_key_id"`
+	Mode                   string `json:"mode"`
+	Listen                 string `json:"listen"`
+	TLSCertFile            string `json:"tls_cert_file"`
+	TLSKeyFile             string `json:"tls_key_file"`
+	DatabaseFile           string `json:"database_file"`
+	RegistryFile           string `json:"registry_file"`
+	SigningKeyFile         string `json:"signing_key_file"`
+	SigningKeyID           string `json:"signing_key_id"`
+	EvidenceRetentionHours int    `json:"evidence_retention_hours,omitempty"`
 }
 
 type Node struct {
@@ -99,6 +100,12 @@ func LoadServer(path string) (ServerConfig, error) {
 	var c ServerConfig
 	if err := strictFile(path, maxFile, &c); err != nil {
 		return c, err
+	}
+	if c.EvidenceRetentionHours == 0 {
+		c.EvidenceRetentionHours = 24
+	}
+	if c.EvidenceRetentionHours < 1 || c.EvidenceRetentionHours > 24 {
+		return c, errors.New("evidence retention must be 1-24 hours")
 	}
 	if c.Mode != "observe" {
 		return c, errors.New("only observe mode is supported")

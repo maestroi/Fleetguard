@@ -13,7 +13,7 @@ import (
 )
 
 func TestAuthenticatedOperatorAuditScopeAndHealthDoesNotLeakSecrets(t *testing.T) {
-	db, err := store.Open(filepath.Join(t.TempDir(), "node-audit.sqlite"))
+	db, err := store.Open(filepath.Join(t.TempDir(), "private", "node-audit.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -24,7 +24,7 @@ func auditEvidence(id, node, source string, when time.Time) protocol.Evidence {
 }
 func TestNodeAuditScopedAndSignedAckIsNotKernelProof(t *testing.T) {
 	now := time.Date(2026, 11, 22, 13, 0, 0, 0, time.UTC)
-	db, err := Open(filepath.Join(t.TempDir(), "events.sqlite"))
+	db, err := Open(filepath.Join(t.TempDir(), "private", "events.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,8 @@ func TestRetentionConfigAndExplicitSensitivePurge(t *testing.T) {
 }
 
 func TestControllerInspectionIsReadOnlyAndCannotInitializeDatabase(t *testing.T) {
-	parent := t.TempDir()
+	parent := filepath.Join(t.TempDir(),"private")
+ if err:=os.Mkdir(parent,0700);err!=nil{t.Fatal(err)}
 	path := filepath.Join(parent, "missing.sqlite")
 	if _, err := OpenReadOnly(path); err == nil {
 		t.Fatal("inspection created a missing database")

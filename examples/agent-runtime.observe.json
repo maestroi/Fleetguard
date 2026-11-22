@@ -11,13 +11,5 @@
   "state_dir": "/replace/with/agent-state",
   "poll_interval_seconds": 5,
   "reconcile_interval_seconds": 1,
-  "max_offline_age_seconds": 90,
-  "denied_traffic": {
-    "enabled": true,
-    "window_seconds": 10,
-    "max_sources": 256,
-    "max_packets_per_window": 5000,
-    "max_reports_per_window": 32,
-    "bindings": [{"service": "ssh", "transport": "tcp", "port": 2222}]
-  }
+  "max_offline_age_seconds": 90
 }

@@ -18,7 +18,7 @@ The parser recognizes only `FINAL_REJECT:`, `FINAL_DROP:`, and `filter_IN_<zone>
 
 ## Configuration
 
-Put this in the *opt-in* `fleetguard-agent -run -runtime-config /absolute/agent-runtime.json` config, or use [the observe example](../examples/agent-runtime.observe.json):
+Put this in the *opt-in* `fleetguard-agent -run -runtime-config /absolute/agent-runtime.json` config, or use [the explicitly enabled sensor example](../examples/agent-runtime.sensor.json). The standard [observe example](../examples/agent-runtime.observe.json) leaves the sensor disabled:
 
 ```json
 "denied_traffic": {

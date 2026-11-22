@@ -48,7 +48,7 @@ func validService(s string)bool {
  for _,ch:=range s {
   if !(ch>='A'&&ch<='Z'||ch>='a'&&ch<='z'||ch>='0'&&ch<='9'||ch=='_'||ch=='-'||ch=='.'||ch==':' ){return false}
  }
- return s[0]!='-' && s[0]!='.' && s[0]!=':' // basic v1 identifier consistency
+ return (s[0]>='A' && s[0]<='Z') || (s[0]>='a' && s[0]<='z') || (s[0]>='0' && s[0]<='9') // v1 identifier prefix
 }
 type portKey struct {transport protocol.Transport;port uint16}
 type sourceKey struct {source string;service string;transport protocol.Transport}

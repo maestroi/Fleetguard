@@ -48,6 +48,12 @@ jobs:
           test "$(grep -c '<ipset type=' <<<"$output")" -eq 1
       - name: Firewalld bounded-cardinality benchmark (10000 sources)
         run: go test -run '^$' -bench '^BenchmarkCardinalityCapped$' -benchtime=2x -benchmem ./internal/sensor/firewalld
+      - name: Exposure profiles, drift evaluation and read-only observer tests
+        run: |
+          go test -count=1 ./internal/exposure/...
+          go run ./cmd/fleetguardctl audit-exposure -config examples/exposure/sui-fullnode.json -observed examples/exposure/sui-fullnode-observed.json > "$RUNNER_TEMP/fleetguard-exposure.json"
+          grep -q '"forbidden_exposure"' "$RUNNER_TEMP/fleetguard-exposure.json"
+          grep -q '"verified_external"' "$RUNNER_TEMP/fleetguard-exposure.json"
       - name: Agent signed-policy recovery, bounded polling and rootless offline tests
         run: go test -count=1 ./internal/agent/...
       - name: Controller auth / SQLite / HTTPS regression tests

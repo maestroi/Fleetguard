@@ -128,6 +128,10 @@ go run ./cmd/fleetguardctl check-safety -config examples/safety-policy.json
 
 The opt-in agent daemon can tail *new* kernel journal entries that firewalld has already configured to log. A strict IPv4 INPUT parser aggregates bounded, sampled source/service/port counters and sends unverified evidence to the existing authenticated HTTPS controller. The sensor **never enables firewalld LogDenied, opens a network port, or initiates a ban**. A controller outage drops telemetry rather than delaying expiry and safety reconciliation. See [denied-traffic sensor setup, limits and test fixtures](docs/firewalld-sensor.md).
 
+## Audit-only exposure profiles (issue #21)
+
+The [role-based exposure auditor](docs/exposure-profiles.md) introduces versioned local profiles, inheritance, trusted range parameters, expiring overrides and a read-only evaluator for unexpected listening ports and firewall configuration drift. Example profiles cover web edges, Solana validators and RPC, and Sui validators/fullnodes. Run `fleetguardctl audit-exposure -config FILE -observed FILE` for rootless fixtures, or `-live -watch` for read-only D-Bus and socket monitoring. **The feature never modifies baseline firewall rules or claims an open socket is internet reachable.**
+
 ## Opt-in signed-policy agent daemon (issue #9)
 
 The [agent reconciler and offline recovery](docs/agent-reconciliation.md) add authenticated outbound HTTPS polling, Ed25519 verification, monotonic durable state, short-lived local decisions and automatic TTL/offline cleanup. The original `fleetguard-agent -config` remains a harmless one-shot simulator; the daemon is enabled only with `fleetguard-agent -run -runtime-config /absolute/path`. The observe-only runtime uses mock firewall state; live firewalld requires **explicit disposable VM-only opt-in** and independent management-path testing. Do not deploy on production hosts.

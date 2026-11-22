@@ -79,7 +79,7 @@ func TestNodeAuditScopedAndSignedAckIsNotKernelProof(t *testing.T) {
 }
 func TestRetentionConfigAndExplicitSensitivePurge(t *testing.T) {
 	now := time.Date(2026, 11, 22, 16, 0, 0, 0, time.UTC)
-	db, err := Open(filepath.Join(t.TempDir(), "events.sqlite"))
+	db, err := Open(filepath.Join(t.TempDir(), "private", "events.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}

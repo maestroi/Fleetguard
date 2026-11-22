@@ -84,7 +84,7 @@ func (s *DB) ReadNodeAudit(node, group string, limit int) (NodeAudit, error) {
 		if err := json.Unmarshal([]byte(row[1]), &signed); err != nil {
 			return NodeAudit{}, err
 		}
-		payload, err := base64.StdEncoding.Strict().DecodeString(signed.PayloadBase64)
+		payload, err := base64.RawStdEncoding.Strict().DecodeString(signed.PayloadBase64)
 		if err != nil || len(payload) > protocol.MaxSnapshotBytes {
 			return NodeAudit{}, errors.New("invalid stored snapshot encoding")
 		}

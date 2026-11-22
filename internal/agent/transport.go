@@ -108,6 +108,24 @@ func (t *Transport) Acknowledge(ctx context.Context, ack protocol.Acknowledgemen
 	_, err = t.request(ctx, "POST", "/v1/ack", raw)
 	return err
 }
+
+// SubmitEvidence sends a single capped, unverified sensor summary to the
+// existing per-node authenticated controller. Source fields remain untrusted;
+// no sensor event is turned into a local or fleet-wide block here.
+func (t *Transport) SubmitEvidence(ctx context.Context, event protocol.Evidence) error {
+	if err := protocol.ValidateEvidence(event, t.node, time.Now()); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	if len(raw) > protocol.MaxEventBytes {
+		return errors.New("sensor event exceeds protocol size limit")
+	}
+	_, err = t.request(ctx, http.MethodPost, "/v1/evidence", raw)
+	return err
+}
 func (t *Transport) Close() {
 	if tr, ok := t.http.Transport.(*http.Transport); ok {
 		tr.CloseIdleConnections()

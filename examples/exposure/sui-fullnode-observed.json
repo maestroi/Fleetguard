@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "observed_at": "2026-11-22T12:00:00Z",
+  "coverage": {
+    "listeners": true,
+    "firewalld": true,
+    "forwarding": true,
+    "external": true,
+    "notes": [
+      "controlled external probe fixture (not performed by Fleetguard)"
+    ]
+  },
+  "listeners": [
+    {
+      "transport": "udp",
+      "port": 8084,
+      "bind": "wildcard"
+    },
+    {
+      "transport": "tcp",
+      "port": 9184,
+      "bind": "wildcard"
+    },
+    {
+      "transport": "tcp",
+      "port": 1337,
+      "bind": "wildcard"
+    }
+  ],
+  "paths": [
+    {
+      "direction": "ingress",
+      "transport": "udp",
+      "port": 8084,
+      "source": "public",
+      "state": "verified_reachable",
+      "provenance": "external_probe"
+    },
+    {
+      "direction": "ingress",
+      "transport": "tcp",
+      "port": 9184,
+      "source": "public",
+      "state": "verified_reachable",
+      "provenance": "external_probe"
+    },
+    {
+      "direction": "ingress",
+      "transport": "tcp",
+      "port": 1337,
+      "source": "public",
+      "state": "verified_reachable",
+      "provenance": "external_probe"
+    }
+  ]
+}

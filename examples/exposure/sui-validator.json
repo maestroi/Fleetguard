@@ -1,0 +1,226 @@
+{
+  "schema": 1,
+  "node_id": "lab-sui-val-a",
+  "role": "sui-validator",
+  "group": "sui",
+  "assigned": [
+    "sui-validator"
+  ],
+  "profiles": [
+    {
+      "name": "baseline-linux",
+      "entries": [
+        {
+          "id": "public-ssh-forbidden",
+          "direction": "ingress",
+          "transport": "tcp",
+          "ports": {
+            "from": 22,
+            "to": 22
+          },
+          "source": "public",
+          "intent": "forbidden"
+        }
+      ]
+    },
+    {
+      "name": "web-edge",
+      "role": "web-edge",
+      "extends": [
+        "baseline-linux"
+      ],
+      "entries": [
+        {
+          "id": "public-https",
+          "direction": "ingress",
+          "transport": "tcp",
+          "ports": {
+            "from": 443,
+            "to": 443
+          },
+          "source": "public",
+          "intent": "required"
+        },
+        {
+          "id": "public-http",
+          "direction": "ingress",
+          "transport": "tcp",
+          "ports": {
+            "from": 80,
+            "to": 80
+          },
+          "source": "public",
+          "intent": "permitted"
+        }
+      ]
+    },
+    {
+      "name": "solana-validator",
+      "role": "solana-validator",
+      "extends": [
+        "baseline-linux"
+      ],
+      "entries": [
+        {
+          "id": "configured-p2p-range",
+          "direction": "ingress",
+          "transport": "udp",
+          "port_parameter": "solana_dynamic_ports",
+          "source": "public",
+          "intent": "required"
+        },
+        {
+          "id": "public-rpc-forbidden",
+          "direction": "ingress",
+          "transport": "tcp",
+          "ports": {
+            "from": 8899,
+            "to": 8899
+          },
+          "source": "public",
+          "intent": "forbidden"
+        }
+      ]
+    },
+    {
+      "name": "solana-rpc",
+      "role": "solana-rpc",
+      "extends": [
+        "baseline-linux"
+      ],
+      "entries": [
+        {
+          "id": "rpc-http",
+          "direction": "ingress",
+          "transport": "tcp",
+          "port_parameter": "solana_rpc_port",
+          "source": "public",
+          "intent": "required",
+          "condition": "public_rpc_enabled"
+        },
+        {
+          "id": "rpc-metrics",
+          "direction": "ingress",
+          "transport": "tcp",
+          "ports": {
+            "from": 9100,
+            "to": 9100
+          },
+          "source": "public",
+          "intent": "forbidden"
+        }
+      ]
+    },
+    {
+      "name": "sui-validator",
+      "role": "sui-validator",
+      "extends": [
+        "baseline-linux"
+      ],
+      "entries": [
+        {
+          "id": "p2p",
+          "direction": "ingress",
+          "transport": "udp",
+          "port_parameter": "sui_p2p_ports",
+          "source": "public",
+          "intent": "required"
+        },
+        {
+          "id": "admin",
+          "direction": "ingress",
+          "transport": "tcp",
+          "ports": {
+            "from": 1337,
+            "to": 1337
+          },
+          "source": "public",
+          "intent": "forbidden"
+        },
+        {
+          "id": "metrics",
+          "direction": "ingress",
+          "transport": "tcp",
+          "ports": {
+            "from": 9184,
+            "to": 9184
+          },
+          "source": "public",
+          "intent": "forbidden"
+        }
+      ]
+    },
+    {
+      "name": "sui-fullnode",
+      "role": "sui-fullnode",
+      "extends": [
+        "baseline-linux"
+      ],
+      "entries": [
+        {
+          "id": "state-sync",
+          "direction": "ingress",
+          "transport": "udp",
+          "ports": {
+            "from": 8084,
+            "to": 8084
+          },
+          "source": "public",
+          "intent": "required"
+        },
+        {
+          "id": "public-api",
+          "direction": "ingress",
+          "transport": "tcp",
+          "ports": {
+            "from": 443,
+            "to": 443
+          },
+          "source": "public",
+          "intent": "permitted",
+          "condition": "public_api_enabled"
+        },
+        {
+          "id": "metrics",
+          "direction": "ingress",
+          "transport": "tcp",
+          "ports": {
+            "from": 9184,
+            "to": 9184
+          },
+          "source": "public",
+          "intent": "forbidden"
+        },
+        {
+          "id": "admin",
+          "direction": "ingress",
+          "transport": "tcp",
+          "ports": {
+            "from": 1337,
+            "to": 1337
+          },
+          "source": "public",
+          "intent": "forbidden"
+        }
+      ]
+    }
+  ],
+  "flags": {
+    "public_api_enabled": false,
+    "public_rpc_enabled": false
+  },
+  "port_parameters": {
+    "solana_dynamic_ports": {
+      "from": 8000,
+      "to": 8020
+    },
+    "solana_rpc_port": {
+      "from": 8899,
+      "to": 8899
+    },
+    "sui_p2p_ports": {
+      "from": 8084,
+      "to": 8084
+    }
+  }
+}

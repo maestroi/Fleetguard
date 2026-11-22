@@ -51,7 +51,7 @@ func main() {
   }
   if err==nil {
    var db *store.DB
-   db,err=store.Open(c.DatabaseFile)
+   if *inspectNode {db,err=store.OpenReadOnly(c.DatabaseFile)} else {db,err=store.Open(c.DatabaseFile)}
    if err==nil {
     defer db.Close()
     err=db.SetEvidenceRetention(c.EvidenceRetentionHours)

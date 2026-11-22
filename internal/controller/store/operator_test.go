@@ -4,6 +4,8 @@ package store
 
 import (
  "crypto/ed25519"
+ "bytes"
+ "os"
  "encoding/json"
  "path/filepath"
  "strings"
@@ -72,4 +74,23 @@ func TestRetentionConfigAndExplicitSensitivePurge(t *testing.T){
  if _,err:=db.Ingest(auditEvidence("new","lab-a","203.0.113.5",now),"ssh",now);err!=nil{t.Fatal(err)}
  view,err=db.ReadNodeAudit("lab-a","ssh",32)
  if err!=nil || view.EvidenceCount!=2{t.Fatalf("fresh evidence unexpectedly lost: %+v %v",view,err)}
+}
+
+func TestControllerInspectionIsReadOnlyAndCannotInitializeDatabase(t *testing.T) {
+ parent:=t.TempDir()
+ path:=filepath.Join(parent,"missing.sqlite")
+ if _,err:=OpenReadOnly(path);err==nil{t.Fatal("inspection created a missing database")}
+ database,err:=Open(path)
+ if err!=nil{t.Fatal(err)}
+ now:=time.Now().UTC()
+ if _,err:=database.Ingest(auditEvidence("read-only","node-a","203.0.113.8",now),"ssh",now);err!=nil{t.Fatal(err)}
+ if err:=database.Close();err!=nil{t.Fatal(err)}
+ before,err:=os.ReadFile(path);if err!=nil{t.Fatal(err)}
+ reader,err:=OpenReadOnly(path);if err!=nil{t.Fatal(err)}
+ audit,err:=reader.ReadNodeAudit("node-a","ssh",16)
+ if err!=nil || audit.EvidenceCount!=1{t.Fatalf("read-only audit unavailable: %+v %v",audit,err)}
+ if _,err:=reader.PurgeSensitive(now.Add(48*time.Hour));err==nil{t.Fatal("read-only connection permitted DELETE")}
+ if err:=reader.Close();err!=nil{t.Fatal(err)}
+ after,err:=os.ReadFile(path);if err!=nil{t.Fatal(err)}
+ if !bytes.Equal(before,after){t.Fatal("read-only inspection modified SQLite database")}
 }

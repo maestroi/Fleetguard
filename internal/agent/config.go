@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/maestroi/Fleetguard/internal/firewall/firewalld"
-	firewalldsensor "github.com/maestroi/Fleetguard/internal/sensor/firewalld"
 	"github.com/maestroi/Fleetguard/internal/safety"
+	firewalldsensor "github.com/maestroi/Fleetguard/internal/sensor/firewalld"
 	"github.com/maestroi/Fleetguard/pkg/protocol"
 )
 
@@ -28,24 +28,24 @@ const (
 )
 
 type RuntimeConfig struct {
-	NodeID                   string              `json:"node_id"`
-	ServiceGroup             string              `json:"service_group"`
-	Mode                     string              `json:"mode"`
-	FirewallBackend          string              `json:"firewall_backend"`
-	ControllerURL            string              `json:"controller_url"`
-	TLSCAFile                string              `json:"tls_ca_file"`
-	TokenFile                string              `json:"token_file"`
-	TrustedKeysFile          string              `json:"trusted_keys_file"`
-	SafetyPolicyFile         string              `json:"safety_policy_file"`
-	StateDir                 string              `json:"state_dir"`
-	PollIntervalSeconds      int                 `json:"poll_interval_seconds"`
-	ReconcileIntervalSeconds int                 `json:"reconcile_interval_seconds"`
-	MaxOfflineAgeSeconds     int                 `json:"max_offline_age_seconds"`
-	Zone                     string              `json:"zone,omitempty"`
-	Bindings                 []firewalld.Binding `json:"bindings,omitempty"`
-	HostINPUTVerified        bool                `json:"host_input_verified,omitempty"`
-	LabConfirm               string              `json:"lab_confirm,omitempty"`
-	DeniedTraffic             *firewalldsensor.Config `json:"denied_traffic,omitempty"`
+	NodeID                   string                  `json:"node_id"`
+	ServiceGroup             string                  `json:"service_group"`
+	Mode                     string                  `json:"mode"`
+	FirewallBackend          string                  `json:"firewall_backend"`
+	ControllerURL            string                  `json:"controller_url"`
+	TLSCAFile                string                  `json:"tls_ca_file"`
+	TokenFile                string                  `json:"token_file"`
+	TrustedKeysFile          string                  `json:"trusted_keys_file"`
+	SafetyPolicyFile         string                  `json:"safety_policy_file"`
+	StateDir                 string                  `json:"state_dir"`
+	PollIntervalSeconds      int                     `json:"poll_interval_seconds"`
+	ReconcileIntervalSeconds int                     `json:"reconcile_interval_seconds"`
+	MaxOfflineAgeSeconds     int                     `json:"max_offline_age_seconds"`
+	Zone                     string                  `json:"zone,omitempty"`
+	Bindings                 []firewalld.Binding     `json:"bindings,omitempty"`
+	HostINPUTVerified        bool                    `json:"host_input_verified,omitempty"`
+	LabConfirm               string                  `json:"lab_confirm,omitempty"`
+	DeniedTraffic            *firewalldsensor.Config `json:"denied_traffic,omitempty"`
 }
 
 func (c RuntimeConfig) Validate() error {

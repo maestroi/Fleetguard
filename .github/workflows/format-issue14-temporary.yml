@@ -1,0 +1,27 @@
+name: One-shot issue 14 gofmt
+on:
+  push:
+    branches: [feat/issue-14-operator-audit-health]
+permissions:
+  contents: read
+jobs:
+  format:
+    if: github.actor == 'maestroi' && github.ref == 'refs/heads/feat/issue-14-operator-audit-health'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: true
+      - name: Format only issue 14 changed Go files
+        run: |
+          set -euo pipefail
+          gofmt -w internal/agent/inspection.go internal/agent/inspection_test.go internal/agent/counters_test.go internal/agent/engine.go internal/controller/store/sqlite.go internal/controller/store/operator.go internal/controller/store/operator_test.go internal/controller/store/open_readonly.go internal/controller/auth/config.go internal/controller/auth/operator_test.go internal/controller/api/server.go internal/controller/api/runtime.go internal/controller/api/operator_test.go cmd/fleetguardctl/main.go cmd/fleetguard-controller/main.go
+          git diff --check
+          git add -- internal/agent/inspection.go internal/agent/inspection_test.go internal/agent/counters_test.go internal/agent/engine.go internal/controller/store/sqlite.go internal/controller/store/operator.go internal/controller/store/operator_test.go internal/controller/store/open_readonly.go internal/controller/auth/config.go internal/controller/auth/operator_test.go internal/controller/api/server.go internal/controller/api/runtime.go internal/controller/api/operator_test.go cmd/fleetguardctl/main.go cmd/fleetguard-controller/main.go
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "style: gofmt issue 14 operator audit and health"
+          git push origin HEAD:refs/heads/feat/issue-14-operator-audit-health

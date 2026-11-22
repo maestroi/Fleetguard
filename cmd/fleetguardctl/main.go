@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"os/signal"
+	"syscall"
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
@@ -17,6 +20,7 @@ import (
 	"time"
 
 	"github.com/maestroi/Fleetguard/internal/agent"
+	"github.com/maestroi/Fleetguard/internal/exposure"
 	"github.com/maestroi/Fleetguard/internal/lab"
 
 	"github.com/maestroi/Fleetguard/internal/buildinfo"
@@ -25,7 +29,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: fleetguardctl version | check-config -kind agent|controller -config FILE | simulate [-a FILE] [-b FILE] [-at RFC3339] | check-safety -config FILE | emergency-disable [-state-dir DIR] [-runtime-config FILE] | hash-token (stdin) | generate-signing-key -private FILE -public FILE")
+	fmt.Fprintln(os.Stderr, "usage: fleetguardctl version | check-config -kind agent|controller -config FILE | simulate [-a FILE] [-b FILE] [-at RFC3339] | check-safety -config FILE | emergency-disable [-state-dir DIR] [-runtime-config FILE] | audit-exposure -config FILE (-observed FILE|-live) [-watch] [-interval 5s] [-grace 2s] | hash-token (stdin) | generate-signing-key -private FILE -public FILE")
 }
 
 func main() {
@@ -34,6 +38,46 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+	case "audit-exposure":
+		flags := flag.NewFlagSet("audit-exposure", flag.ExitOnError)
+		configPath := flags.String("config", "", "local-only JSON profile assignment")
+		observedPath := flags.String("observed", "", "read-only observed network fixture JSON")
+		live := flags.Bool("live", false, "read local socket tables and firewalld D-Bus without modifying them")
+		watch := flags.Bool("watch", false, "repeat live read-only scans; debounce firewalld D-Bus changes")
+		interval := flags.Duration("interval", 5*time.Second, "socket scan fallback interval (1-60s)")
+		grace := flags.Duration("grace", 2*time.Second, "minimum drift persistence before alert (0-5m)")
+		flags.Parse(os.Args[2:])
+		if flags.NArg()!=0 || *configPath=="" || (*observedPath=="")==*live || (*watch && !*live) {
+			usage()
+			os.Exit(2)
+		}
+		document,err:=exposure.Load(*configPath)
+		if err!=nil {fmt.Fprintln(os.Stderr,"exposure config:",err);os.Exit(1)}
+		effective,err:=exposure.Compile(document,time.Now())
+		if err!=nil{fmt.Fprintln(os.Stderr,"exposure compile:",err);os.Exit(1)}
+		if *watch{
+			ctx,stop:=signal.NotifyContext(context.Background(),os.Interrupt,syscall.SIGTERM)
+			defer stop()
+			err=exposure.Watch(ctx,effective,*interval,*grace,exposure.ObserveLive,func(result exposure.WatchResult)error{
+				if result.Trigger=="startup" || result.Trigger=="periodic_full" || len(result.Alerts)>0 {
+					return json.NewEncoder(os.Stdout).Encode(result)
+				}
+				return nil
+			})
+		} else {
+			var observed exposure.Observed
+			if *live {observed=exposure.ObserveLive(context.Background())} else {
+				var data []byte
+				data,err=os.ReadFile(*observedPath)
+				if err==nil {err=exposure.ParseObserved(data,&observed)}
+			}
+			if err==nil{
+				var report exposure.Report
+				report,err=exposure.Evaluate(effective,observed)
+				if err==nil {err=json.NewEncoder(os.Stdout).Encode(report)}
+			}
+		}
+		if err!=nil {fmt.Fprintln(os.Stderr,"audit-exposure:",err);os.Exit(1)}
 	case "check-safety":
 		flags := flag.NewFlagSet("check-safety", flag.ExitOnError)
 		path := flags.String("config", "", "path to local safety JSON")

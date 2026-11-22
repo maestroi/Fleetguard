@@ -168,9 +168,14 @@ func Evaluate(expected Effective, observed Observed) (Report, error) {
 	report := Report{Schema: SchemaVersion, NodeID: expected.NodeID, Role: expected.Role, ObservedAt: observed.ObservedAt,
 		ProfileVersion: SchemaVersion, Coverage: observed.Coverage, Findings: make([]Finding, 0)}
 	if observed.Coverage.External {
-		at := observed.ObservedAt
-		report.LastVerifiedAt = &at
-	}
+        for _, path := range observed.Paths {
+            if path.Provenance == "external_probe" {
+                at := observed.ObservedAt
+                report.LastVerifiedAt = &at
+                break
+            }
+        }
+    }
 	add := func(f Finding) {
 		if len(report.Findings) < 256 {
 			report.Findings = append(report.Findings, f)
@@ -255,7 +260,7 @@ func Evaluate(expected Effective, observed Observed) (Report, error) {
 				}
 			}
 		}
-		if ready {
+		if ready && !blocked {
 			continue
 		}
 		path := Path{Direction: r.Direction, Transport: r.Transport, Port: r.Ports.From, Source: r.Source, Zone: r.Zone, Interface: r.Interface}

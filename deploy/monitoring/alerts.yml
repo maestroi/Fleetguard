@@ -1,0 +1,85 @@
+# Reference alerts. Thresholds are starting points to validate in the lab.
+groups:
+  - name: fleetguard
+    rules:
+      - alert: FleetguardTargetDown
+        expr: up{job=~"fleetguard-.*"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.job }} {{ $labels.instance }} metrics scrape failing"
+          description: "Scrape failure says nothing about firewall state; check the host directly."
+
+      - alert: FleetguardAgentControllerDisconnected
+        expr: fleetguard_agent_controller_connected == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Agent {{ $labels.instance }} has not reached the controller for 5m"
+
+      - alert: FleetguardPolicyStale
+        # Central policy dropped due to TTL/offline age. Agent fell back to local-only.
+        expr: fleetguard_agent_offline_expired == 1
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: "Agent {{ $labels.instance }} central policy expired"
+
+      - alert: FleetguardReconcileFailing
+        expr: increase(fleetguard_agent_firewall_reconcile_errors_total[5m]) > 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Agent {{ $labels.instance }} firewall reconcile keeps failing"
+
+      - alert: FleetguardEnforcementUnhealthy
+        # Only meaningful for agents configured to enforce.
+        expr: fleetguard_agent_enforcement_healthy == 0 and on(instance) fleetguard_agent_info{mode="enforce"} == 1
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "Agent {{ $labels.instance }} enforcement not verified healthy"
+
+      - alert: FleetguardEmergencyDisabled
+        expr: fleetguard_agent_emergency_disabled == 1
+        labels: {severity: warning}
+        annotations:
+          summary: "Agent {{ $labels.instance }} local kill switch is latched"
+
+      - alert: FleetguardDesiredAppliedMismatch
+        expr: sum by (instance) (fleetguard_agent_active_decisions) != on(instance) fleetguard_agent_enforced_decisions
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Agent {{ $labels.instance }} applied decisions differ from desired"
+
+      - alert: FleetguardHighRejectedPolicyRate
+        expr: sum by (instance) (increase(fleetguard_agent_policy_updates_total{result=~"invalid|scope_denied"}[15m])) > 3
+        labels: {severity: critical}
+        annotations:
+          summary: "Agent {{ $labels.instance }} rejecting signed policies (signature/replay/scope)"
+
+      - alert: FleetguardSensorEventLoss
+        expr: sum by (instance) (increase(fleetguard_agent_sensor_events_dropped_total[10m])) > 100
+        labels: {severity: warning}
+        annotations:
+          summary: "Agent {{ $labels.instance }} denied-traffic sensor dropping data"
+
+      - alert: FleetguardControllerStorageErrors
+        expr: sum(increase(fleetguard_controller_storage_errors_total[5m])) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: "Controller SQLite errors"
+
+      - alert: FleetguardControllerIngestQueueSaturated
+        expr: fleetguard_controller_ingest_queue_depth / fleetguard_controller_ingest_queue_capacity > 0.8
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: "Controller evidence queue above 80%"
+
+      - alert: FleetguardControllerAuthFailures
+        expr: sum(increase(fleetguard_controller_http_requests_total{code="401"}[10m])) > 20
+        labels: {severity: warning}
+        annotations:
+          summary: "Many unauthenticated requests to the controller"

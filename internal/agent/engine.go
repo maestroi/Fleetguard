@@ -52,6 +52,7 @@ type Status struct {
 	LastReconcile       time.Time `json:"last_reconcile,omitempty"`
 	LastError           string    `json:"last_error,omitempty"`
 	LastAcceptedAt      time.Time `json:"last_accepted_at,omitempty"`
+	AcceptedSnapshots   uint64    `json:"accepted_snapshots"`
 	InvalidSnapshots    uint64    `json:"invalid_snapshots"`
 	RejectedScopes      uint64    `json:"rejected_scopes"`
 	ReconcileErrors     uint64    `json:"reconcile_errors"`
@@ -230,6 +231,7 @@ func (e *Engine) Accept(ctx context.Context, envelope protocol.SignedSnapshot) (
 	e.status.Revision = signed.Revision
 	e.status.OfflineExpired = false
 	e.status.LastAcceptedAt = now
+	e.status.AcceptedSnapshots++
 	if err := e.reconcile(ctx); err != nil {
 		e.status.ReconcileErrors++
 		return ack(e.options, signed.Revision, protocol.StateError, protocol.ReasonInvalidDecision), err

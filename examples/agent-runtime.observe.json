@@ -11,5 +11,6 @@
   "state_dir": "/replace/with/agent-state",
   "poll_interval_seconds": 5,
   "reconcile_interval_seconds": 1,
-  "max_offline_age_seconds": 90
+  "max_offline_age_seconds": 90,
+  "metrics_listen": "127.0.0.1:9464"
 }

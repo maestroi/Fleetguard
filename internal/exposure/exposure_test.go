@@ -347,19 +347,27 @@ func TestObserverCannotWriteFirewall(t *testing.T) {
 }
 
 func TestExternalProbeBlockedOverridesLocalListener(t *testing.T) {
- now:=time.Now().UTC()
- obs:=observed(now,Path{Direction:"ingress",Transport:protocol.TransportTCP,Port:443,Source:"public",State:"verified_blocked",Provenance:"external_probe"})
- obs.Listeners=[]Listener{{Transport:protocol.TransportTCP,Port:443,Bind:"wildcard"}}
- report,err:=Evaluate(compiled(t,"web-edge"),obs)
- if err!=nil {t.Fatal(err)}
- if !hasCode(report,"required_port_unavailable",443) {
-  t.Fatalf("verified external failure masked by listening socket: %+v",report.Findings)
- }
- for _,f:=range report.Findings {
-  if f.Code=="required_port_unavailable" && f.Confidence!="verified_external" {t.Fatalf("probe lost external provenance: %+v",f)}
- }
- obs.Paths=nil
- report,err=Evaluate(compiled(t,"web-edge"),obs)
- if err!=nil{t.Fatal(err)}
- if report.LastVerifiedAt!=nil {t.Fatal("no external probe but last_verified_at set")}
+	now := time.Now().UTC()
+	obs := observed(now, Path{Direction: "ingress", Transport: protocol.TransportTCP, Port: 443, Source: "public", State: "verified_blocked", Provenance: "external_probe"})
+	obs.Listeners = []Listener{{Transport: protocol.TransportTCP, Port: 443, Bind: "wildcard"}}
+	report, err := Evaluate(compiled(t, "web-edge"), obs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasCode(report, "required_port_unavailable", 443) {
+		t.Fatalf("verified external failure masked by listening socket: %+v", report.Findings)
+	}
+	for _, f := range report.Findings {
+		if f.Code == "required_port_unavailable" && f.Confidence != "verified_external" {
+			t.Fatalf("probe lost external provenance: %+v", f)
+		}
+	}
+	obs.Paths = nil
+	report, err = Evaluate(compiled(t, "web-edge"), obs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.LastVerifiedAt != nil {
+		t.Fatal("no external probe but last_verified_at set")
+	}
 }

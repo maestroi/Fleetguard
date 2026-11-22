@@ -132,8 +132,10 @@ func TestRetentionConfigAndExplicitSensitivePurge(t *testing.T) {
 }
 
 func TestControllerInspectionIsReadOnlyAndCannotInitializeDatabase(t *testing.T) {
-	parent := filepath.Join(t.TempDir(),"private")
- if err:=os.Mkdir(parent,0700);err!=nil{t.Fatal(err)}
+	parent := filepath.Join(t.TempDir(), "private")
+	if err := os.Mkdir(parent, 0700); err != nil {
+		t.Fatal(err)
+	}
 	path := filepath.Join(parent, "missing.sqlite")
 	if _, err := OpenReadOnly(path); err == nil {
 		t.Fatal("inspection created a missing database")

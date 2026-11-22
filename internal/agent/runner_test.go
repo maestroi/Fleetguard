@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/pem"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	firewalldsensor "github.com/maestroi/Fleetguard/internal/sensor/firewalld"
 	"github.com/maestroi/Fleetguard/pkg/protocol"
 )
 
@@ -148,4 +150,61 @@ func TestConfigStrictModes(t *testing.T) {
 	if err := invalid.Validate(); err == nil {
 		t.Fatal("cleartext HTTP accepted")
 	}
+}
+
+func TestSensorEvidenceSubmissionViaPinnedTLS(t *testing.T) {
+ received:=0
+ server:=httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+  if r.Method!=http.MethodPost || r.URL.Path!="/v1/evidence" || r.URL.Query().Get("group")!="lab-ssh" ||
+    r.Header.Get("X-Fleetguard-Node-ID")!="lab-node-a" || r.Header.Get("Authorization")!="Bearer "+strings.Repeat("x",32) {
+    t.Error("incorrect evidence request scope/auth")
+    w.WriteHeader(http.StatusForbidden);return
+  }
+  wire,err:=io.ReadAll(io.LimitReader(r.Body,protocol.MaxEventBytes+1))
+  if err!=nil {t.Error(err);return}
+  ev,err:=protocol.DecodeEvidence(wire,"lab-node-a",time.Now())
+  if err!=nil || ev.ProofLevel!=protocol.ProofUnverifiedLog || ev.Observation!="firewalld_denied_packets" {
+   t.Error("invalid/spoofable observation: ",err,ev)
+   w.WriteHeader(http.StatusUnprocessableEntity);return
+  }
+  received++
+  w.Header().Set("Content-Type","application/json")
+  w.Write([]byte(`{"accepted":true,"duplicate":false}`))
+ }))
+ defer server.Close()
+ dir:=t.TempDir()
+ certFile:=filepath.Join(dir,"ca.pem")
+ if err:=os.WriteFile(certFile,pem.EncodeToMemory(&pem.Block{Type:"CERTIFICATE",Bytes:server.Certificate().Raw}),0600);err!=nil{t.Fatal(err)}
+ cfg:=RuntimeConfig{NodeID:"lab-node-a",ServiceGroup:"lab-ssh",ControllerURL:server.URL,TLSCAFile:certFile}
+ client,err:=NewTransport(cfg,strings.Repeat("x",32))
+ if err!=nil{t.Fatal(err)}
+ defer client.Close()
+ ev:=protocol.Evidence{
+  Schema:protocol.SchemaVersion,NodeID:"lab-node-a",EventID:"test-fw-1",DedupKey:"test-fw-1",
+  ObservedAt:time.Now().UTC(),WindowSeconds:10,SourceIP:"203.0.113.99",Service:"ssh",
+  Transport:protocol.TransportTCP,DestinationPorts:[]uint16{2222},Observation:"firewalld_denied_packets",
+  Attempts:3,ProofLevel:protocol.ProofUnverifiedLog,
+ }
+ if err:=client.SubmitEvidence(context.Background(),ev);err!=nil{t.Fatal(err)}
+ if received!=1{t.Fatalf("expected one controller evidence request, got %d",received)}
+ ev.ProofLevel=protocol.ProofEstablishedConnection
+ ev.Transport=protocol.TransportUDP
+ if err:=client.SubmitEvidence(context.Background(),ev);err==nil {t.Fatal("UDP packet log claimed established-connection proof")}
+ if received!=1{t.Fatal("sent locally invalid evidence")}
+}
+func TestSensorRuntimeOptInStrict(t *testing.T){
+ good:=RuntimeConfig{
+  NodeID:"lab-node-a",ServiceGroup:"lab-ssh",Mode:"observe",FirewallBackend:"simulated",
+  ControllerURL:"https://127.0.0.1:9443",TLSCAFile:"/tmp/ca.pem",TokenFile:"/tmp/token",
+  TrustedKeysFile:"/tmp/keys",SafetyPolicyFile:"/tmp/policy",StateDir:"/tmp/private-state",
+  PollIntervalSeconds:5,ReconcileIntervalSeconds:1,MaxOfflineAgeSeconds:60,
+ }
+ if err:=good.Validate();err!=nil{t.Fatal(err)}
+ bad:=good;bad.DeniedTraffic=&firewalldsensor.Config{Enabled:true,WindowSeconds:5,MaxSources:0}
+ if err:=bad.Validate();err==nil{t.Fatal("invalid unlimited sensor config accepted")}
+ good.DeniedTraffic=&firewalldsensor.Config{
+  Enabled:true,WindowSeconds:10,MaxSources:32,MaxPacketsPerWindow:100,
+  MaxReportsPerWindow:16,Bindings:[]firewalldsensor.Binding{{Service:"ssh",Transport:protocol.TransportTCP,Port:2222}},
+ }
+ if err:=good.Validate();err!=nil{t.Fatal(err)}
 }

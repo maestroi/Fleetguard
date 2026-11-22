@@ -249,7 +249,7 @@ func Run(ctx context.Context, configPath string, out io.Writer) error {
 			if err := engine.Tick(ctx); err != nil {
 				slog.Warn("post-poll reconcile failed", "error", err)
 			}
-			if err := encoder.Encode(engine.Status()); err != nil {
+			if err := writeStatus(); err != nil {
 				return err
 			}
 			poll.Reset(PollDelay(time.Duration(c.PollIntervalSeconds)*time.Second, failures, nil))

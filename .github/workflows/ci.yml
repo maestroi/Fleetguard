@@ -35,7 +35,7 @@ jobs:
       - name: Protocol contract and fixture tests
         run: go test -count=1 ./pkg/protocol
       - name: Rootless simulated sensor, firewall and partition tests
-        run: go test -count=1 ./internal/firewall/mock ./internal/firewall/firewalld ./internal/sensor/synthetic ./internal/lab
+        run: go test -count=1 ./internal/firewall/mock ./internal/firewall/firewalld ./internal/sensor/synthetic ./internal/sensor/firewalld ./internal/lab
       - name: Rootless D-Bus reconcile benchmark (1/100/10000; 10000 rejects)
         run: go test -run '^$' -bench '^BenchmarkReconcile$' -benchtime=20x -benchmem ./internal/firewall/firewalld
       - name: Compile gated disposable-VM D-Bus integration test (never execute it in CI)
@@ -46,6 +46,66 @@ jobs:
           grep -q '^name: fg1_1249d4bd57f69425$' <<<"$output"
           grep -q '<option name="family" value="inet"/>' <<<"$output"
           test "$(grep -c '<ipset type=' <<<"$output")" -eq 1
+      - name: Firewalld bounded-cardinality benchmark (10000 sources)
+        run: go test -run '^
+        run: go test -count=1 ./internal/agent/...
+      - name: Controller auth / SQLite / HTTPS regression tests
+        run: go test -count=1 ./internal/controller/... ./pkg/protocol
+      - name: Release and auto-merge policy tests
+        run: |
+          bash scripts/test-release-version.sh
+          bash scripts/test-eligible-owner-pr.sh
+      - name: Cross-node correlation and operator audit tests
+        run: go test -count=1 ./internal/controller/correlation ./internal/controller/store ./cmd/fleetguard-controller
+      - name: Unit tests (race detector)
+        run: go test -race ./...
+      - name: Build Linux amd64 binaries
+        run: make build
+      - name: Unprivileged simulated smoke test
+        run: make smoke
+      - name: Validate Compose least-privilege contract
+        run: |
+          docker compose --env-file deploy/controller/.env.example \
+            -f deploy/controller/compose.yaml config --format json > "$RUNNER_TEMP/fleetguard-compose.json"
+          python3 scripts/test-compose-security.py "$RUNNER_TEMP/fleetguard-compose.json"
+      - name: Build and smoke-test unprivileged controller image
+        run: |
+          docker build -f Dockerfile.controller --build-arg VERSION=ci -t fleetguard-controller:ci .
+          test "$(docker image inspect --format '{{.Config.User}}' fleetguard-controller:ci)" = "65532:65532"
+          output="$(docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --user 65532:65532 --pids-limit 64 \
+            fleetguard-controller:ci -version)"
+          case "$output" in *ci*) ;; *) echo "Bad image version: $output" >&2; exit 1;; esac
+ -bench '^BenchmarkCardinalityCapped
+        run: go test -count=1 ./internal/agent/...
+      - name: Controller auth / SQLite / HTTPS regression tests
+        run: go test -count=1 ./internal/controller/... ./pkg/protocol
+      - name: Release and auto-merge policy tests
+        run: |
+          bash scripts/test-release-version.sh
+          bash scripts/test-eligible-owner-pr.sh
+      - name: Cross-node correlation and operator audit tests
+        run: go test -count=1 ./internal/controller/correlation ./internal/controller/store ./cmd/fleetguard-controller
+      - name: Unit tests (race detector)
+        run: go test -race ./...
+      - name: Build Linux amd64 binaries
+        run: make build
+      - name: Unprivileged simulated smoke test
+        run: make smoke
+      - name: Validate Compose least-privilege contract
+        run: |
+          docker compose --env-file deploy/controller/.env.example \
+            -f deploy/controller/compose.yaml config --format json > "$RUNNER_TEMP/fleetguard-compose.json"
+          python3 scripts/test-compose-security.py "$RUNNER_TEMP/fleetguard-compose.json"
+      - name: Build and smoke-test unprivileged controller image
+        run: |
+          docker build -f Dockerfile.controller --build-arg VERSION=ci -t fleetguard-controller:ci .
+          test "$(docker image inspect --format '{{.Config.User}}' fleetguard-controller:ci)" = "65532:65532"
+          output="$(docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --user 65532:65532 --pids-limit 64 \
+            fleetguard-controller:ci -version)"
+          case "$output" in *ci*) ;; *) echo "Bad image version: $output" >&2; exit 1;; esac
+ -benchtime=2x -benchmem ./internal/sensor/firewalld
       - name: Agent signed-policy recovery, bounded polling and rootless offline tests
         run: go test -count=1 ./internal/agent/...
       - name: Controller auth / SQLite / HTTPS regression tests

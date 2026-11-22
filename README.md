@@ -124,6 +124,10 @@ go run ./cmd/fleetguardctl check-safety -config examples/safety-policy.json
 # sudo fleetguardctl emergency-disable -state-dir /run/fleetguard
 ```
 
+## Optional firewalld denied-log sensor (issue #10)
+
+The opt-in agent daemon can tail *new* kernel journal entries that firewalld has already configured to log. A strict IPv4 INPUT parser aggregates bounded, sampled source/service/port counters and sends unverified evidence to the existing authenticated HTTPS controller. The sensor **never enables firewalld LogDenied, opens a network port, or initiates a ban**. A controller outage drops telemetry rather than delaying expiry and safety reconciliation. See [denied-traffic sensor setup, limits and test fixtures](docs/firewalld-sensor.md).
+
 ## Opt-in signed-policy agent daemon (issue #9)
 
 The [agent reconciler and offline recovery](docs/agent-reconciliation.md) add authenticated outbound HTTPS polling, Ed25519 verification, monotonic durable state, short-lived local decisions and automatic TTL/offline cleanup. The original `fleetguard-agent -config` remains a harmless one-shot simulator; the daemon is enabled only with `fleetguard-agent -run -runtime-config /absolute/path`. The observe-only runtime uses mock firewall state; live firewalld requires **explicit disposable VM-only opt-in** and independent management-path testing. Do not deploy on production hosts.

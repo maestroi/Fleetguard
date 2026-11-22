@@ -28,7 +28,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: fleetguardctl version | check-config -kind agent|controller -config FILE | simulate [-a FILE] [-b FILE] [-at RFC3339] | check-safety -config FILE | emergency-disable [-state-dir DIR] [-runtime-config FILE] | audit-exposure -config FILE (-observed FILE|-live) [-watch] [-interval 5s] [-grace 2s] | hash-token (stdin) | generate-signing-key -private FILE -public FILE")
+	fmt.Fprintln(os.Stderr, "usage: fleetguardctl version | check-config -kind agent|controller -config FILE | simulate [-a FILE] [-b FILE] [-at RFC3339] | check-safety -config FILE | status|decisions|inspect [IP] -runtime-config FILE | emergency-disable [-state-dir DIR] [-runtime-config FILE] | audit-exposure -config FILE (-observed FILE|-live) [-watch] [-interval 5s] [-grace 2s] | hash-token (stdin) | generate-signing-key -private FILE -public FILE")
 }
 
 func main() {
@@ -37,6 +37,40 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+ case "status","decisions","inspect":
+  command:=os.Args[1]
+  arguments:=os.Args[2:]
+  ip:=""
+  if command=="inspect" && len(arguments)>0 && !strings.HasPrefix(arguments[0],"-"){
+   ip=arguments[0];arguments=arguments[1:]
+  }
+  flags:=flag.NewFlagSet(command,flag.ExitOnError)
+  cfgPath:=flags.String("runtime-config","","absolute path to installed agent runtime config")
+  flags.Parse(arguments)
+  if *cfgPath==""{usage();os.Exit(2)}
+  if command=="inspect" {
+   if flags.NArg()==1 && ip==""{ip=flags.Arg(0)}
+   if ip=="" || (len(flags.Args())>0 && (flags.Arg(0)!=ip || len(flags.Args())>1)){usage();os.Exit(2)}
+  }else if flags.NArg()!=0{usage();os.Exit(2)}
+  ctx,cancel:=context.WithTimeout(context.Background(),5*time.Second);defer cancel()
+  report,err:=agent.InspectRuntime(ctx,*cfgPath,ip,time.Now().UTC())
+  if err!=nil{fmt.Fprintln(os.Stderr,command+":",err);os.Exit(1)}
+  switch command {
+  case "status":
+   result:=map[string]any{
+    "node_id":report.NodeID,"service_group":report.ServiceGroup,
+    "mode":report.Mode,"revision":report.Revision,"signer_key_id":report.SignerKeyID,
+    "acceptance":report.Acceptance,"enforcement":report.Enforcement,
+    "kernel_verified":report.KernelVerified,"backend_error":report.BackendError,
+    "desired_count":len(report.SignedDesired),"accepted_count":len(report.AcceptedEffective),
+    "backend_observed_count":len(report.BackendObserved),"simulated":report.Simulated,
+    "emergency_disabled":report.EmergencyDisabled,
+    "observed_at":report.ObservedAt,"signed_expires_at":report.SignedExpiresAt,
+   }
+   err=json.NewEncoder(os.Stdout).Encode(result)
+  default:err=json.NewEncoder(os.Stdout).Encode(report)
+  }
+  if err!=nil{fmt.Fprintln(os.Stderr,err);os.Exit(1)}
 	case "audit-exposure":
 		flags := flag.NewFlagSet("audit-exposure", flag.ExitOnError)
 		configPath := flags.String("config", "", "local-only JSON profile assignment")

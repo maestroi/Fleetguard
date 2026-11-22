@@ -27,7 +27,10 @@ func main() {
 	showVersion := flags.Bool("version", false, "print build version")
 	evaluate := flags.Bool("evaluate", false, "offline, observe-only correlation report (no policy publication)")
 	policyPath := flags.String("correlation", "", "private local correlation policy (required with -evaluate)")
-	groupFlag := flags.String("group", "", "authorized service group (required with -evaluate)")
+	groupFlag := flags.String("group", "", "authorized service group (required with -evaluate and -inspect-node)")
+ nodeFlag := flags.String("node", "", "node ID (required with -inspect-node)")
+ inspectNode := flags.Bool("inspect-node",false,"local-only, read-only controller view of node evidence, signed policy and acknowledgements")
+ purgeSensitive := flags.Bool("purge-sensitive",false,"local-only purge evidence and audit text past configured retention")
 	serve := flags.Bool("serve", false, "start explicit private HTTPS observe-only controller; requires -config server JSON")
 	flags.Parse(os.Args[1:])
 	if *showVersion {
@@ -38,7 +41,51 @@ func main() {
 		fmt.Fprintln(os.Stderr, "unexpected positional arguments")
 		os.Exit(2)
 	}
-	if *evaluate {
+	if *inspectNode || *purgeSensitive {
+  if *serve || *evaluate || (*inspectNode && *purgeSensitive) || *configPath=="" {
+   fmt.Fprintln(os.Stderr,"inspection/purge is offline only and requires server -config");os.Exit(2)
+  }
+  c,err:=auth.LoadServer(*configPath)
+  if err==nil {
+   if _,statErr:=os.Stat(c.DatabaseFile);statErr!=nil {err=statErr}
+  }
+  if err==nil {
+   var db *store.DB
+   db,err=store.Open(c.DatabaseFile)
+   if err==nil {
+    defer db.Close()
+    err=db.SetEvidenceRetention(c.EvidenceRetentionHours)
+    if err==nil && *purgeSensitive {
+     var purged store.RetentionPurge
+     purged,err=db.PurgeSensitive(time.Now().UTC())
+     if err==nil{err=json.NewEncoder(os.Stdout).Encode(purged)}
+    }
+    if err==nil && *inspectNode {
+     if *nodeFlag=="" || *groupFlag==""{err=fmt.Errorf("-inspect-node requires -node and -group")}
+     if err==nil{
+      var registry auth.Registry
+      registry,err=auth.LoadRegistry(c.RegistryFile)
+      if err==nil{
+       allowed:=false
+       for _,node:=range registry.Nodes {
+        if node.NodeID!=*nodeFlag{continue}
+        for _,g:=range node.Groups{if g==*groupFlag{allowed=true}}
+       }
+       if !allowed{err=fmt.Errorf("node is not assigned to requested group")}
+      }
+     }
+     if err==nil{
+      var report store.NodeAudit
+      report,err=db.ReadNodeAudit(*nodeFlag,*groupFlag,32)
+      if err==nil{err=json.NewEncoder(os.Stdout).Encode(report)}
+     }
+    }
+   }
+  }
+  if err!=nil{fmt.Fprintln(os.Stderr,"operator audit:",err);os.Exit(1)}
+  return
+ }
+ if *evaluate {
 		if *serve || *groupFlag == "" || *policyPath == "" {
 			fmt.Fprintln(os.Stderr, "-evaluate requires -config, -correlation, -group and cannot be combined with -serve")
 			os.Exit(2)

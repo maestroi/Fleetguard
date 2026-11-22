@@ -40,6 +40,7 @@ See [GitHub Issues](https://github.com/maestroi/Fleetguard/issues) for the imple
 - [Architecture and protocol sketch](docs/architecture.md)
 - [Threat model and safety requirements](docs/threat-model.md)
 - [Isolated homelab POC test plan](docs/homelab-poc.md)
+- [Observability: Prometheus metrics, alerts and Grafana](docs/observability.md)
 - [ADR 0001: firewalld-first backend](docs/adr/0001-firewalld-first.md)
 - [ADR 0002: role-based exposure profiles](docs/adr/0002-exposure-profiles.md)
 

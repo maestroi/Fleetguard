@@ -17,9 +17,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/maestroi/Fleetguard/internal/buildinfo"
 	"github.com/maestroi/Fleetguard/internal/controller/auth"
 	"github.com/maestroi/Fleetguard/internal/controller/store"
+	"github.com/maestroi/Fleetguard/internal/metrics"
 	"github.com/maestroi/Fleetguard/pkg/protocol"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const MaxBodyBytes = protocol.MaxEnvelopeBytes + 1
@@ -36,6 +39,13 @@ type Server struct {
 	now        func() time.Time
 	queue      chan ingestRequest
 	log        *slog.Logger
+	// Metrics use only bounded labels: route patterns, HTTP codes and fixed
+	// protocol enums. Never node IDs, IPs, groups or error text.
+	reg      *prometheus.Registry
+	requests *prometheus.CounterVec
+	rejected *prometheus.CounterVec
+	acks     *prometheus.CounterVec
+	storage  *prometheus.CounterVec
 }
 type rateBucket struct {
 	at   time.Time
@@ -61,7 +71,54 @@ func New(r auth.Registry, db *store.DB, keyID string, key ed25519.PrivateKey, cl
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Server{registry: r, db: db, keyID: keyID, signingKey: key, now: clock, queue: make(chan ingestRequest, QueueCapacity), log: logger, rates: make(map[string]rateBucket)}
+	s := &Server{registry: r, db: db, keyID: keyID, signingKey: key, now: clock, queue: make(chan ingestRequest, QueueCapacity), log: logger, rates: make(map[string]rateBucket),
+		reg: metrics.NewRegistry(),
+		requests: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "fleetguard_controller_http_requests_total",
+			Help: "API requests by matched route pattern and HTTP status code."}, []string{"route", "code"}),
+		rejected: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "fleetguard_controller_events_rejected_total",
+			Help: "Evidence envelopes rejected after authentication, by bounded reason."}, []string{"reason"}),
+		acks: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "fleetguard_controller_agent_ack_total",
+			Help: "Agent-reported acknowledgement states. Client-reported, not verified enforcement."}, []string{"state"}),
+		storage: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "fleetguard_controller_storage_errors_total",
+			Help: "SQLite storage failures by operation."}, []string{"operation"}),
+	}
+	s.reg.MustRegister(s.requests, s.rejected, s.acks, s.storage,
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "fleetguard_controller_ingest_queue_depth",
+			Help: "Evidence envelopes waiting for the single SQLite writer."}, func() float64 { return float64(len(s.queue)) }),
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "fleetguard_controller_ingest_queue_capacity",
+			Help: "Bounded evidence queue capacity."}, func() float64 { return QueueCapacity }),
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "fleetguard_controller_registered_nodes",
+			Help: "Non-revoked nodes in the local registry."}, func() float64 {
+			n := 0
+			for _, node := range s.currentRegistry().Nodes {
+				if !node.Revoked {
+					n++
+				}
+			}
+			return float64(n)
+		}),
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "fleetguard_controller_enforcement_enabled",
+			Help: "Always 0: the controller is observe-only and publishes empty policies."}, func() float64 { return 0 }),
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "fleetguard_controller_info",
+			Help: "Build and mode information.", ConstLabels: prometheus.Labels{"version": buildinfo.Version, "mode": "observe"}}, func() float64 { return 1 }),
+	)
+	for _, v := range []prometheus.Counter{s.storage.WithLabelValues("ingest"), s.storage.WithLabelValues("snapshot"), s.storage.WithLabelValues("ack"), s.storage.WithLabelValues("audit")} {
+		v.Add(0) // pre-create series so rate() and absent-alerts work from the first scrape
+	}
+	return s
+}
+
+// MetricsRegistry exposes the per-server registry for the separate listener.
+func (s *Server) MetricsRegistry() *prometheus.Registry { return s.reg }
+
+type statusRecorder struct {
+	http.ResponseWriter
+	code int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.code = code
+	r.ResponseWriter.WriteHeader(code)
 }
 
 // RunWriter must run in one goroutine until the context is cancelled.
@@ -96,6 +153,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/snapshot", s.snapshot)
 	mux.HandleFunc("POST /v1/ack", s.ack)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Route is a fixed mux pattern (never the raw path) to bound cardinality.
+		_, route := mux.Handler(r)
+		if route == "" {
+			route = "unmatched"
+		}
+		rec := &statusRecorder{ResponseWriter: w, code: 200}
+		defer func() { s.requests.WithLabelValues(route, strconv.Itoa(rec.code)).Inc() }()
+		w = rec
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
 		// A real TLS connection is mandatory; httptest's TLS server sets this.
@@ -147,6 +212,7 @@ func (s *Server) auditView(w http.ResponseWriter, r *http.Request) {
 	}
 	view, err := s.db.ReadNodeAudit(id.node.NodeID, id.group, limit)
 	if err != nil {
+		s.storage.WithLabelValues("audit").Inc()
 		s.log.Error("audit view failed", "error", err)
 		problem(w, 503, "storage_unavailable")
 		return
@@ -184,14 +250,17 @@ func (s *Server) evidence(w http.ResponseWriter, r *http.Request) {
 	ev, err := protocol.DecodeEvidence(b, id.node.NodeID, now)
 	if err != nil {
 		s.log.Warn("invalid evidence", "node", id.node.NodeID, "reason", protocol.Reason(err))
+		s.rejected.WithLabelValues(string(protocol.Reason(err))).Inc()
 		problem(w, 422, string(protocol.Reason(err)))
 		return
 	}
 	if !s.currentRegistry().CanAccess(id.node, id.group, ev.Service) {
+		s.rejected.WithLabelValues("service_scope_mismatch").Inc()
 		problem(w, 403, "service_scope_mismatch")
 		return
 	}
 	if !s.allowEvidence(id.node.NodeID, now) {
+		s.rejected.WithLabelValues("node_rate_limit").Inc()
 		w.Header().Set("Retry-After", "1")
 		problem(w, 429, "node_rate_limit")
 		return
@@ -200,12 +269,14 @@ func (s *Server) evidence(w http.ResponseWriter, r *http.Request) {
 	select {
 	case s.queue <- req:
 	default:
+		s.rejected.WithLabelValues("ingest_queue_full").Inc()
 		problem(w, 503, "ingest_queue_full")
 		return
 	}
 	select {
 	case result := <-req.result:
 		if errors.Is(result.err, store.ErrCapacity) {
+			s.rejected.WithLabelValues("storage_capacity").Inc()
 			problem(w, 429, "storage_capacity")
 			return
 		}
@@ -214,6 +285,7 @@ func (s *Server) evidence(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if result.err != nil {
+			s.storage.WithLabelValues("ingest").Inc()
 			s.log.Error("evidence insert failed", "error", result.err)
 			problem(w, 503, "storage_unavailable")
 			return
@@ -230,6 +302,7 @@ func (s *Server) snapshot(w http.ResponseWriter, r *http.Request) {
 	}
 	envelope, revision, err := s.db.Snapshot(id.node.NodeID, id.group, s.keyID, s.signingKey, s.now())
 	if err != nil {
+		s.storage.WithLabelValues("snapshot").Inc()
 		s.log.Error("snapshot failed", "error", err)
 		problem(w, 503, "storage_unavailable")
 		return
@@ -270,9 +343,13 @@ func (s *Server) ack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		s.storage.WithLabelValues("ack").Inc()
 		s.log.Error("ack failed", "error", err)
 		problem(w, 503, "storage_unavailable")
 		return
+	}
+	if !duplicate {
+		s.acks.WithLabelValues(string(a.State)).Inc()
 	}
 	jsonResult(w, 200, map[string]any{"accepted": true, "duplicate": duplicate, "note": "client_reported_state_not_verified_enforcement"})
 }

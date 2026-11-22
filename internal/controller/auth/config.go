@@ -14,13 +14,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
-	"net/netip"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
+
+	"github.com/maestroi/Fleetguard/internal/metrics"
 )
 
 const maxFile = 64 << 10
@@ -37,6 +36,9 @@ type ServerConfig struct {
 	SigningKeyFile         string `json:"signing_key_file"`
 	SigningKeyID           string `json:"signing_key_id"`
 	EvidenceRetentionHours int    `json:"evidence_retention_hours,omitempty"`
+	// MetricsListen enables a separate plain-HTTP GET /metrics listener.
+	// Empty (default) disables it.
+	MetricsListen string `json:"metrics_listen,omitempty"`
 }
 
 type Node struct {
@@ -110,17 +112,16 @@ func LoadServer(path string) (ServerConfig, error) {
 	if c.Mode != "observe" {
 		return c, errors.New("only observe mode is supported")
 	}
-	host, port, err := net.SplitHostPort(c.Listen)
-	if err != nil || port == "" {
-		return c, errors.New("explicit IP:port listen address required")
+	if err := metrics.ValidateListen(c.Listen); err != nil {
+		return c, err
 	}
-	addr, err := netip.ParseAddr(host)
-	if err != nil || (!addr.IsLoopback() && !addr.IsPrivate() && !netip.MustParsePrefix("100.64.0.0/10").Contains(addr)) || addr.Is4In6() || addr.IsUnspecified() {
-		return c, errors.New("listen must be an explicit loopback/private IP, not a wildcard or public address")
-	}
-	p, err := strconv.Atoi(port)
-	if err != nil || p < 1 || p > 65535 {
-		return c, errors.New("invalid TCP listen port")
+	if c.MetricsListen != "" {
+		if err := metrics.ValidateListen(c.MetricsListen); err != nil {
+			return c, fmt.Errorf("metrics_listen: %w", err)
+		}
+		if c.MetricsListen == c.Listen {
+			return c, errors.New("metrics_listen must differ from the API listen address")
+		}
 	}
 	for _, p := range []string{c.TLSCertFile, c.TLSKeyFile, c.DatabaseFile, c.RegistryFile, c.SigningKeyFile} {
 		if p == "" {

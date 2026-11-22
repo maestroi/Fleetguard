@@ -13,6 +13,7 @@ import (
 	"github.com/maestroi/Fleetguard/internal/firewall"
 	"github.com/maestroi/Fleetguard/internal/firewall/firewalld"
 	"github.com/maestroi/Fleetguard/internal/firewall/mock"
+	"github.com/maestroi/Fleetguard/internal/metrics"
 	"github.com/maestroi/Fleetguard/internal/safety"
 	firewalldsensor "github.com/maestroi/Fleetguard/internal/sensor/firewalld"
 	"github.com/maestroi/Fleetguard/pkg/protocol"
@@ -196,6 +197,16 @@ func Run(ctx context.Context, configPath string, out io.Writer) error {
 			defer cancel()
 			if err := backend.RemoveOwned(cleanupCtx); err != nil {
 				slog.Error("owned firewall cleanup on shutdown failed", "error", err)
+			}
+		}()
+	}
+	if c.MetricsListen != "" {
+		reg := metrics.NewRegistry()
+		reg.MustRegister(NewCollector(c, engine, denied))
+		go func() {
+			if err := metrics.Serve(ctx, c.MetricsListen, reg); err != nil {
+				// Telemetry must never stop expiry/reconcile; log and continue.
+				slog.Error("metrics listener failed", "error", err)
 			}
 		}()
 	}

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/maestroi/Fleetguard/internal/firewall/firewalld"
+	"github.com/maestroi/Fleetguard/internal/metrics"
 	"github.com/maestroi/Fleetguard/internal/safety"
 	firewalldsensor "github.com/maestroi/Fleetguard/internal/sensor/firewalld"
 	"github.com/maestroi/Fleetguard/pkg/protocol"
@@ -46,12 +47,20 @@ type RuntimeConfig struct {
 	HostINPUTVerified        bool                    `json:"host_input_verified,omitempty"`
 	LabConfirm               string                  `json:"lab_confirm,omitempty"`
 	DeniedTraffic            *firewalldsensor.Config `json:"denied_traffic,omitempty"`
+	// MetricsListen enables a read-only plain-HTTP GET /metrics listener on an
+	// explicit loopback/private/Tailscale IP. Empty (default) disables it.
+	MetricsListen string `json:"metrics_listen,omitempty"`
 }
 
 func (c RuntimeConfig) Validate() error {
 	if c.DeniedTraffic != nil {
 		if err := c.DeniedTraffic.Validate(); err != nil {
 			return err
+		}
+	}
+	if c.MetricsListen != "" {
+		if err := metrics.ValidateListen(c.MetricsListen); err != nil {
+			return fmt.Errorf("metrics_listen: %w", err)
 		}
 	}
 	if c.NodeID == "" || c.ServiceGroup == "" || strings.ContainsAny(c.NodeID+c.ServiceGroup, " /\\?&\x00") {

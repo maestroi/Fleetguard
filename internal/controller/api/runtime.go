@@ -15,6 +15,7 @@ import (
 
 	"github.com/maestroi/Fleetguard/internal/controller/auth"
 	"github.com/maestroi/Fleetguard/internal/controller/store"
+	"github.com/maestroi/Fleetguard/internal/metrics"
 )
 
 // Run serves the explicitly configured private IP using TLS 1.3 only. There
@@ -51,6 +52,14 @@ func Run(ctx context.Context, c auth.ServerConfig) error {
 	workerDone := make(chan struct{})
 	go func() { defer close(workerDone); controller.RunWriter(workerCtx.Done()) }()
 	defer func() { cancelWorker(); <-workerDone }()
+	if c.MetricsListen != "" {
+		go func() {
+			if err := metrics.Serve(ctx, c.MetricsListen, controller.MetricsRegistry()); err != nil {
+				// Telemetry failure must not take down evidence ingest.
+				slog.Error("metrics listener failed", "error", err)
+			}
+		}()
+	}
 	ln, err := net.Listen("tcp", c.Listen)
 	if err != nil {
 		return err

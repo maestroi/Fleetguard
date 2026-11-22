@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/maestroi/Fleetguard/internal/firewall/firewalld"
+	firewalldsensor "github.com/maestroi/Fleetguard/internal/sensor/firewalld"
 	"github.com/maestroi/Fleetguard/internal/safety"
 	"github.com/maestroi/Fleetguard/pkg/protocol"
 )
@@ -44,9 +45,15 @@ type RuntimeConfig struct {
 	Bindings                 []firewalld.Binding `json:"bindings,omitempty"`
 	HostINPUTVerified        bool                `json:"host_input_verified,omitempty"`
 	LabConfirm               string              `json:"lab_confirm,omitempty"`
+	DeniedTraffic             *firewalldsensor.Config `json:"denied_traffic,omitempty"`
 }
 
 func (c RuntimeConfig) Validate() error {
+	if c.DeniedTraffic != nil {
+		if err := c.DeniedTraffic.Validate(); err != nil {
+			return err
+		}
+	}
 	if c.NodeID == "" || c.ServiceGroup == "" || strings.ContainsAny(c.NodeID+c.ServiceGroup, " /\\?&\x00") {
 		return errors.New("node_id and service_group must be explicit simple identifiers")
 	}

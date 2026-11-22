@@ -55,10 +55,11 @@ func ParseLine(line string)(Packet,error) {
   key,val,found:=strings.Cut(word,"=")
   if !found {continue} // e.g. SYN, DF or kernel informational fields
   if key=="" || len(key)>24 || len(val)>128{return Packet{},ErrMalformed}
-  if _,seen:=fields[key];seen {return Packet{},ErrMalformed}
+  if _,seen:=fields[key];seen && key!="LEN" {return Packet{},ErrMalformed}
   fields[key]=val
  }
  in,out:=fields["IN"],fields["OUT"]
+ if _,ok:=fields["OUT"];!ok {return Packet{},ErrMalformed}
  if in=="" || !interfaceName.MatchString(in) {return Packet{},ErrMalformed}
  if out!="" {return Packet{},ErrIgnored} // FORWARD, not host INPUT
  src,err:=netip.ParseAddr(fields["SRC"])

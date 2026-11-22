@@ -14,6 +14,7 @@ import (
 	"github.com/maestroi/Fleetguard/internal/firewall/firewalld"
 	"github.com/maestroi/Fleetguard/internal/firewall/mock"
 	"github.com/maestroi/Fleetguard/internal/safety"
+	firewalldsensor "github.com/maestroi/Fleetguard/internal/sensor/firewalld"
 	"github.com/maestroi/Fleetguard/pkg/protocol"
 )
 
@@ -176,6 +177,14 @@ func Run(ctx context.Context, configPath string, out io.Writer) error {
 		return err
 	}
 	poller := &Poller{Engine: engine, Client: client}
+ var denied *firewalldsensor.Collector
+ if c.DeniedTraffic != nil {
+  denied, err = firewalldsensor.NewCollector(c.NodeID,*c.DeniedTraffic)
+  if err != nil {return err}
+  // Journal collection is opt-in and never calls Engine.AddLocal.
+  // An optional telemetry reader cannot block policy expiry or management.
+  go firewalldsensor.RunJournal(ctx,denied,client)
+ }
 	// A clean shutdown clears all temporary owned rules. A SIGKILL or power
 	// failure CANNOT guarantee removal until the next restart/reconcile: run
 	// this lab-only opt-in with independent console access and a watchdog.
@@ -195,14 +204,24 @@ func Run(ctx context.Context, configPath string, out io.Writer) error {
 	defer poll.Stop()
 	failures := 0
 	encoder := json.NewEncoder(out)
-	previous := Status{}
+ previous := Status{}
+ lastStatus := time.Time{}
+ writeStatus := func() error {
+  payload := struct {
+   Status
+   Sensor *firewalldsensor.Stats `json:"denied_traffic,omitempty"`
+  }{Status: engine.Status()}
+  if denied!=nil {s:=denied.Stats();payload.Sensor=&s}
+  lastStatus=time.Now()
+  return encoder.Encode(payload)
+ }
 	// Reconcile recovered, unexpired state or clear unknown runtime entries
 	// before contacting any controller; never let a stale IP-set ban persist
 	// as apparently valid after a restart.
 	if err := engine.Tick(ctx); err != nil {
 		slog.Error("initial local reconcile failed", "error", err)
 	}
-	if err := encoder.Encode(engine.Status()); err != nil {
+	if err := writeStatus(); err != nil {
 		return err
 	}
 	for {
@@ -214,8 +233,8 @@ func Run(ctx context.Context, configPath string, out io.Writer) error {
 				slog.Warn("local reconcile failed", "error", err)
 			}
 			status := engine.Status()
-			if status != previous {
-				if err := encoder.Encode(status); err != nil {
+			if status != previous || (denied!=nil && time.Since(lastStatus)>=10*time.Second) {
+				if err := writeStatus(); err != nil {
 					return err
 				}
 				previous = status

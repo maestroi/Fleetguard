@@ -42,7 +42,9 @@ func Run(ctx context.Context, c auth.ServerConfig) error {
 		return fmt.Errorf("open SQLite: %w", err)
 	}
 	defer db.Close()
- if err:=db.SetEvidenceRetention(c.EvidenceRetentionHours);err!=nil{return err}
+	if err := db.SetEvidenceRetention(c.EvidenceRetentionHours); err != nil {
+		return err
+	}
 	controller := New(registry, db, c.SigningKeyID, key, time.Now, slog.Default())
 	workerCtx, cancelWorker := context.WithCancel(context.Background())
 	defer cancelWorker()

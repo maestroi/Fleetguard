@@ -51,11 +51,11 @@ type Status struct {
 	LastContact         time.Time `json:"last_contact,omitempty"`
 	LastReconcile       time.Time `json:"last_reconcile,omitempty"`
 	LastError           string    `json:"last_error,omitempty"`
- LastAcceptedAt time.Time `json:"last_accepted_at,omitempty"`
- InvalidSnapshots uint64 `json:"invalid_snapshots"`
- RejectedScopes uint64 `json:"rejected_scopes"`
- ReconcileErrors uint64 `json:"reconcile_errors"`
- CentralDecisions int `json:"central_decisions"`
+	LastAcceptedAt      time.Time `json:"last_accepted_at,omitempty"`
+	InvalidSnapshots    uint64    `json:"invalid_snapshots"`
+	RejectedScopes      uint64    `json:"rejected_scopes"`
+	ReconcileErrors     uint64    `json:"reconcile_errors"`
+	CentralDecisions    int       `json:"central_decisions"`
 	Simulated           bool      `json:"simulated"`
 }
 
@@ -180,7 +180,7 @@ func (e *Engine) Accept(ctx context.Context, envelope protocol.SignedSnapshot) (
 			return protocol.Acknowledgement{}, err
 		}
 		if err := e.reconcile(ctx); err != nil {
-            e.status.ReconcileErrors++
+			e.status.ReconcileErrors++
 			return ack(e.options, e.persisted.Revision, protocol.StateError, protocol.ReasonInvalidDecision), err
 		}
 		return e.appliedAck(), nil
@@ -188,13 +188,13 @@ func (e *Engine) Accept(ctx context.Context, envelope protocol.SignedSnapshot) (
 	signed, err := protocol.VerifySignedSnapshot(envelope, e.options.Keys, e.options.Audience, e.persisted.Revision, now)
 	if err != nil {
 		e.setError(err)
-        e.status.InvalidSnapshots++
+		e.status.InvalidSnapshots++
 		return protocol.Acknowledgement{}, err
 	}
 	if err := e.options.Policy.CheckCandidate(signed, e.options.Audience, now, e.options.ManagementPrefixLookup); err != nil {
 		e.setError(err)
 		e.status.RejectedScopes++
-        return ack(e.options, signed.Revision, protocol.StateRejected, protocol.ReasonScopeMismatch), err
+		return ack(e.options, signed.Revision, protocol.StateRejected, protocol.ReasonScopeMismatch), err
 	}
 	if e.options.Mode == "enforce" {
 		disabled, err := e.options.EmergencyDisabled()
@@ -216,7 +216,7 @@ func (e *Engine) Accept(ctx context.Context, envelope protocol.SignedSnapshot) (
 		runtime.Capabilities = capabilities
 		if err := e.options.Policy.Authorize(signed, e.options.Audience, now, runtime); err != nil {
 			e.setError(err)
-            e.status.RejectedScopes++
+			e.status.RejectedScopes++
 			return ack(e.options, signed.Revision, protocol.StateRejected, protocol.ReasonScopeMismatch), err
 		}
 	}
@@ -229,9 +229,9 @@ func (e *Engine) Accept(ctx context.Context, envelope protocol.SignedSnapshot) (
 	e.snapshot = &signed
 	e.status.Revision = signed.Revision
 	e.status.OfflineExpired = false
- e.status.LastAcceptedAt=now
+	e.status.LastAcceptedAt = now
 	if err := e.reconcile(ctx); err != nil {
-        e.status.ReconcileErrors++
+		e.status.ReconcileErrors++
 		return ack(e.options, signed.Revision, protocol.StateError, protocol.ReasonInvalidDecision), err
 	}
 	return e.appliedAck(), nil
@@ -248,11 +248,13 @@ func (e *Engine) appliedAck() protocol.Acknowledgement {
 // checks emergency latch every time, and repairs firewalld runtime reload
 // drift by reconciling desired state against freshly inspected D-Bus state.
 func (e *Engine) Tick(ctx context.Context) error {
- e.mu.Lock()
- defer e.mu.Unlock()
- err:=e.reconcile(ctx)
- if err!=nil{e.status.ReconcileErrors++}
- return err
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	err := e.reconcile(ctx)
+	if err != nil {
+		e.status.ReconcileErrors++
+	}
+	return err
 }
 func (e *Engine) reconcile(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
@@ -263,10 +265,10 @@ func (e *Engine) reconcile(ctx context.Context) error {
 	desired := make([]protocol.Decision, 0)
 	valid := e.snapshot != nil && e.snapshot.ExpiresAt.After(now) && e.persisted.AcceptedAt.Add(e.options.MaxOfflineAge).After(now)
 	if valid {
-        desired = append(desired, prune(e.snapshot.Decisions, now)...)
-        e.status.CentralDecisions=len(desired)
+		desired = append(desired, prune(e.snapshot.Decisions, now)...)
+		e.status.CentralDecisions = len(desired)
 	} else if e.persisted.Revision > 0 {
-        e.status.CentralDecisions=0
+		e.status.CentralDecisions = 0
 		e.status.OfflineExpired = true
 	}
 	localIDs := make([]string, 0, len(e.local))
@@ -388,7 +390,7 @@ func (e *Engine) AddLocal(ctx context.Context, d protocol.Decision, proof protoc
 	}
 	e.local[d.ID] = d
 	if err := e.reconcile(ctx); err != nil {
-        e.status.ReconcileErrors++
+		e.status.ReconcileErrors++
 		delete(e.local, d.ID)
 		return err
 	}

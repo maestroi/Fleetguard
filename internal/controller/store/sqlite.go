@@ -35,9 +35,9 @@ var ErrRevision = errors.New("acknowledgement does not match current policy revi
 
 // DB keeps one connection and serializes transactions; small lab workloads only.
 type DB struct {
-	mu sync.Mutex
-	db *C.sqlite3
- retention time.Duration
+	mu        sync.Mutex
+	db        *C.sqlite3
+	retention time.Duration
 }
 
 func Open(path string) (*DB, error) {
@@ -81,7 +81,7 @@ func Open(path string) (*DB, error) {
 		return nil, errors.New(message)
 	}
 	C.sqlite3_busy_timeout(db, 2000)
-	s := &DB{db: db, retention: 24*time.Hour}
+	s := &DB{db: db, retention: 24 * time.Hour}
 	for _, sql := range []string{
 		`PRAGMA journal_mode=DELETE`,
 		`CREATE TABLE IF NOT EXISTS evidence (node_id TEXT NOT NULL, event_id TEXT NOT NULL, dedup_key TEXT NOT NULL, group_id TEXT NOT NULL, payload TEXT NOT NULL, digest TEXT NOT NULL, received_at TEXT NOT NULL, PRIMARY KEY(node_id,event_id), UNIQUE(node_id,dedup_key))`,
@@ -205,13 +205,13 @@ func (s *DB) Ingest(e protocol.Evidence, group string, now time.Time) (duplicate
 	err = s.transaction(func() error {
 		// Bound retained evidence by age and by per-node cardinality.
 		if _, err := s.exec("DELETE FROM evidence WHERE received_at < ?", instant(now.Add(-s.retention))); err != nil {
-            return err
-        }
-        // Audit records may include a reported source IP. Apply the same
-        // retention as raw evidence at each ingestion, not only manual purges.
-        if _,err:=s.exec("DELETE FROM audit WHERE received_at < ?",instant(now.Add(-s.retention)));err!=nil{
-            return err
-        }
+			return err
+		}
+		// Audit records may include a reported source IP. Apply the same
+		// retention as raw evidence at each ingestion, not only manual purges.
+		if _, err := s.exec("DELETE FROM audit WHERE received_at < ?", instant(now.Add(-s.retention))); err != nil {
+			return err
+		}
 		row, found, err := s.row("SELECT digest FROM evidence WHERE node_id=? AND (event_id=? OR dedup_key=?) LIMIT 1", e.NodeID, e.EventID, e.DedupKey)
 		if err != nil {
 			return err

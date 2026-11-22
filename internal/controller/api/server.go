@@ -12,8 +12,8 @@ import (
 	"log/slog"
 	"net/http"
 	"reflect"
- "strconv"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -91,7 +91,7 @@ func problem(w http.ResponseWriter, status int, code string) {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/health", s.health)
- mux.HandleFunc("GET /v1/audit", s.auditView)
+	mux.HandleFunc("GET /v1/audit", s.auditView)
 	mux.HandleFunc("POST /v1/evidence", s.evidence)
 	mux.HandleFunc("GET /v1/snapshot", s.snapshot)
 	mux.HandleFunc("POST /v1/ack", s.ack)
@@ -121,26 +121,37 @@ func (s *Server) Handler() http.Handler {
 	})
 }
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
- id:=fromIdentity(r.Context())
- jsonResult(w,200,map[string]any{
-  "status":"ok","mode":"observe","enforcement_enabled":false,
-  "node_id":id.node.NodeID,"authenticated":true,"queue_depth":len(s.queue),
-  "applied_state_verified":false,
- })
+	id := fromIdentity(r.Context())
+	jsonResult(w, 200, map[string]any{
+		"status": "ok", "mode": "observe", "enforcement_enabled": false,
+		"node_id": id.node.NodeID, "authenticated": true, "queue_depth": len(s.queue),
+		"applied_state_verified": false,
+	})
 }
+
 // auditView is authenticated and restricted to the *current node and group*.
 // There is intentionally NO fleet-wide administrator HTTP endpoint.
-func(s *Server) auditView(w http.ResponseWriter,r *http.Request) {
- id,ok:=requestGroup(w,r);if !ok{return}
- limit:=16
- if raw:=r.URL.Query().Get("limit");raw!="" {
-  value,err:=strconv.Atoi(raw)
-  if err!=nil || value<1 || value>32{problem(w,400,"invalid_audit_limit");return}
-  limit=value
- }
- view,err:=s.db.ReadNodeAudit(id.node.NodeID,id.group,limit)
- if err!=nil{s.log.Error("audit view failed","error",err);problem(w,503,"storage_unavailable");return}
- jsonResult(w,200,view)
+func (s *Server) auditView(w http.ResponseWriter, r *http.Request) {
+	id, ok := requestGroup(w, r)
+	if !ok {
+		return
+	}
+	limit := 16
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 32 {
+			problem(w, 400, "invalid_audit_limit")
+			return
+		}
+		limit = value
+	}
+	view, err := s.db.ReadNodeAudit(id.node.NodeID, id.group, limit)
+	if err != nil {
+		s.log.Error("audit view failed", "error", err)
+		problem(w, 503, "storage_unavailable")
+		return
+	}
+	jsonResult(w, 200, view)
 }
 func requestGroup(w http.ResponseWriter, r *http.Request) (identity, bool) {
 	id := fromIdentity(r.Context())

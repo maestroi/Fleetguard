@@ -51,6 +51,11 @@ type Status struct {
 	LastContact         time.Time `json:"last_contact,omitempty"`
 	LastReconcile       time.Time `json:"last_reconcile,omitempty"`
 	LastError           string    `json:"last_error,omitempty"`
+ LastAcceptedAt time.Time `json:"last_accepted_at,omitempty"`
+ InvalidSnapshots uint64 `json:"invalid_snapshots"`
+ RejectedScopes uint64 `json:"rejected_scopes"`
+ ReconcileErrors uint64 `json:"reconcile_errors"`
+ CentralDecisions int `json:"central_decisions"`
 	Simulated           bool      `json:"simulated"`
 }
 
@@ -182,11 +187,13 @@ func (e *Engine) Accept(ctx context.Context, envelope protocol.SignedSnapshot) (
 	signed, err := protocol.VerifySignedSnapshot(envelope, e.options.Keys, e.options.Audience, e.persisted.Revision, now)
 	if err != nil {
 		e.setError(err)
+        e.status.InvalidSnapshots++
 		return protocol.Acknowledgement{}, err
 	}
 	if err := e.options.Policy.CheckCandidate(signed, e.options.Audience, now, e.options.ManagementPrefixLookup); err != nil {
 		e.setError(err)
-		return ack(e.options, signed.Revision, protocol.StateRejected, protocol.ReasonScopeMismatch), err
+		e.status.RejectedScopes++
+        return ack(e.options, signed.Revision, protocol.StateRejected, protocol.ReasonScopeMismatch), err
 	}
 	if e.options.Mode == "enforce" {
 		disabled, err := e.options.EmergencyDisabled()
@@ -220,6 +227,7 @@ func (e *Engine) Accept(ctx context.Context, envelope protocol.SignedSnapshot) (
 	e.snapshot = &signed
 	e.status.Revision = signed.Revision
 	e.status.OfflineExpired = false
+ e.status.LastAcceptedAt=now
 	if err := e.reconcile(ctx); err != nil {
 		return ack(e.options, signed.Revision, protocol.StateError, protocol.ReasonInvalidDecision), err
 	}
@@ -237,9 +245,11 @@ func (e *Engine) appliedAck() protocol.Acknowledgement {
 // checks emergency latch every time, and repairs firewalld runtime reload
 // drift by reconciling desired state against freshly inspected D-Bus state.
 func (e *Engine) Tick(ctx context.Context) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.reconcile(ctx)
+ e.mu.Lock()
+ defer e.mu.Unlock()
+ err:=e.reconcile(ctx)
+ if err!=nil{e.status.ReconcileErrors++}
+ return err
 }
 func (e *Engine) reconcile(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
@@ -250,8 +260,10 @@ func (e *Engine) reconcile(ctx context.Context) error {
 	desired := make([]protocol.Decision, 0)
 	valid := e.snapshot != nil && e.snapshot.ExpiresAt.After(now) && e.persisted.AcceptedAt.Add(e.options.MaxOfflineAge).After(now)
 	if valid {
-		desired = append(desired, prune(e.snapshot.Decisions, now)...)
+        desired = append(desired, prune(e.snapshot.Decisions, now)...)
+        e.status.CentralDecisions=len(desired)
 	} else if e.persisted.Revision > 0 {
+        e.status.CentralDecisions=0
 		e.status.OfflineExpired = true
 	}
 	localIDs := make([]string, 0, len(e.local))

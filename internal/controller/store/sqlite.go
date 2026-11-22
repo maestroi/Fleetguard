@@ -205,8 +205,13 @@ func (s *DB) Ingest(e protocol.Evidence, group string, now time.Time) (duplicate
 	err = s.transaction(func() error {
 		// Bound retained evidence by age and by per-node cardinality.
 		if _, err := s.exec("DELETE FROM evidence WHERE received_at < ?", instant(now.Add(-s.retention))); err != nil {
-			return err
-		}
+            return err
+        }
+        // Audit records may include a reported source IP. Apply the same
+        // retention as raw evidence at each ingestion, not only manual purges.
+        if _,err:=s.exec("DELETE FROM audit WHERE received_at < ?",instant(now.Add(-s.retention)));err!=nil{
+            return err
+        }
 		row, found, err := s.row("SELECT digest FROM evidence WHERE node_id=? AND (event_id=? OR dedup_key=?) LIMIT 1", e.NodeID, e.EventID, e.DedupKey)
 		if err != nil {
 			return err

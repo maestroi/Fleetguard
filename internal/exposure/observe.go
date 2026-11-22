@@ -153,6 +153,7 @@ func ObserveLive(ctx context.Context)Observed{
   err=InspectFirewalld(timeoutCtx,dbusObserver{conn:conn},&o)
   cancel()
   if err!=nil{o.Coverage.Firewalld=false;appendNote(&o.Coverage,"firewalld D-Bus inspection failed")}
+  if !o.Coverage.Firewalld {o.Paths=nil} // incomplete read must never be presented as authoritative
  }
  // Deliberately no Docker socket, iptables or network reachability probe.
  o.Coverage.Forwarding=false

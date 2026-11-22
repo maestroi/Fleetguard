@@ -4,7 +4,6 @@ import (
 	"context"
 	"os/signal"
 	"syscall"
-	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
@@ -47,7 +46,7 @@ func main() {
 		interval := flags.Duration("interval", 5*time.Second, "socket scan fallback interval (1-60s)")
 		grace := flags.Duration("grace", 2*time.Second, "minimum drift persistence before alert (0-5m)")
 		flags.Parse(os.Args[2:])
-		if flags.NArg()!=0 || *configPath=="" || (*observedPath=="")==*live || (*watch && !*live) {
+		if flags.NArg()!=0 || *configPath=="" || (*observedPath!="")==*live || (*watch && !*live) {
 			usage()
 			os.Exit(2)
 		}

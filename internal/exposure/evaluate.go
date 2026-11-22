@@ -227,3 +227,11 @@ func Evaluate(expected Effective,observed Observed)(Report,error){
  report.Findings=slices.Clip(report.Findings)
  return report,nil
 }
+
+// ParseObserved only accepts a bounded, strictly typed observation fixture.
+// Live observers must never accept remote values as permission to alter rules.
+func ParseObserved(data []byte,out *Observed)error{
+ if out==nil{return errors.New("exposure: nil observation destination")}
+ if err:=strict(data,512<<10,out);err!=nil{return err}
+ return out.Validate()
+}

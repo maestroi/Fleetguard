@@ -132,6 +132,10 @@ The opt-in agent daemon can tail *new* kernel journal entries that firewalld has
 
 The [role-based exposure auditor](docs/exposure-profiles.md) introduces versioned local profiles, inheritance, trusted range parameters, expiring overrides and a read-only evaluator for unexpected listening ports and firewall configuration drift. Example profiles cover web edges, Solana validators and RPC, and Sui validators/fullnodes. Run `fleetguardctl audit-exposure -config FILE -observed FILE` for rootless fixtures, or `-live -watch` for read-only D-Bus and socket monitoring. **The feature never modifies baseline firewall rules or claims an open socket is internet reachable.**
 
+## Operator audit and health (issue #14)
+
+The [read-only operator audit](docs/operator-audit.md) adds `fleetguardctl status`, `decisions` and `inspect <ip>` for signed desired vs accepted vs backend-observed temporary bans, without touching the firewall. It also adds scoped authenticated `GET /v1/audit` on the controller's existing TLS listener, a local read-only `fleetguard-controller -inspect-node` command, and configurable evidence retention with a local `-purge-sensitive` command. An agent acknowledgement or D-Bus readback is **not** packet-path proof. Prometheus /metrics and dashboards remain in [#35](https://github.com/maestroi/Fleetguard/issues/35).
+
 ## Opt-in signed-policy agent daemon (issue #9)
 
 The [agent reconciler and offline recovery](docs/agent-reconciliation.md) add authenticated outbound HTTPS polling, Ed25519 verification, monotonic durable state, short-lived local decisions and automatic TTL/offline cleanup. The original `fleetguard-agent -config` remains a harmless one-shot simulator; the daemon is enabled only with `fleetguard-agent -run -runtime-config /absolute/path`. The observe-only runtime uses mock firewall state; live firewalld requires **explicit disposable VM-only opt-in** and independent management-path testing. Do not deploy on production hosts.

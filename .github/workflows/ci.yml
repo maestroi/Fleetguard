@@ -54,6 +54,9 @@ jobs:
           go run ./cmd/fleetguardctl audit-exposure -config examples/exposure/sui-fullnode.json -observed examples/exposure/sui-fullnode-observed.json > "$RUNNER_TEMP/fleetguard-exposure.json"
           grep -q '"forbidden_exposure"' "$RUNNER_TEMP/fleetguard-exposure.json"
           grep -q '"verified_external"' "$RUNNER_TEMP/fleetguard-exposure.json"
+      - name: Operator status, signed-state inspection and source-IP retention tests
+        run: |
+          go test -count=1 ./internal/agent ./internal/controller/store ./internal/controller/api ./internal/controller/auth
       - name: Agent signed-policy recovery, bounded polling and rootless offline tests
         run: go test -count=1 ./internal/agent/...
       - name: Controller auth / SQLite / HTTPS regression tests

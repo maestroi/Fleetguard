@@ -61,7 +61,7 @@ func main() {
     "node_id":report.NodeID,"service_group":report.ServiceGroup,
     "mode":report.Mode,"revision":report.Revision,"signer_key_id":report.SignerKeyID,
     "acceptance":report.Acceptance,"enforcement":report.Enforcement,
-    "kernel_verified":report.KernelVerified,"backend_error":report.BackendError,
+    "kernel_verified":report.KernelVerified,"backend_readback_verified":report.ReadbackVerified,"backend_error":report.BackendError,
     "desired_count":len(report.SignedDesired),"accepted_count":len(report.AcceptedEffective),
     "backend_observed_count":len(report.BackendObserved),"simulated":report.Simulated,
     "emergency_disabled":report.EmergencyDisabled,

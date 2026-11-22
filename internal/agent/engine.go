@@ -180,6 +180,7 @@ func (e *Engine) Accept(ctx context.Context, envelope protocol.SignedSnapshot) (
 			return protocol.Acknowledgement{}, err
 		}
 		if err := e.reconcile(ctx); err != nil {
+            e.status.ReconcileErrors++
 			return ack(e.options, e.persisted.Revision, protocol.StateError, protocol.ReasonInvalidDecision), err
 		}
 		return e.appliedAck(), nil
@@ -215,6 +216,7 @@ func (e *Engine) Accept(ctx context.Context, envelope protocol.SignedSnapshot) (
 		runtime.Capabilities = capabilities
 		if err := e.options.Policy.Authorize(signed, e.options.Audience, now, runtime); err != nil {
 			e.setError(err)
+            e.status.RejectedScopes++
 			return ack(e.options, signed.Revision, protocol.StateRejected, protocol.ReasonScopeMismatch), err
 		}
 	}
@@ -229,6 +231,7 @@ func (e *Engine) Accept(ctx context.Context, envelope protocol.SignedSnapshot) (
 	e.status.OfflineExpired = false
  e.status.LastAcceptedAt=now
 	if err := e.reconcile(ctx); err != nil {
+        e.status.ReconcileErrors++
 		return ack(e.options, signed.Revision, protocol.StateError, protocol.ReasonInvalidDecision), err
 	}
 	return e.appliedAck(), nil
@@ -385,6 +388,7 @@ func (e *Engine) AddLocal(ctx context.Context, d protocol.Decision, proof protoc
 	}
 	e.local[d.ID] = d
 	if err := e.reconcile(ctx); err != nil {
+        e.status.ReconcileErrors++
 		delete(e.local, d.ID)
 		return err
 	}

@@ -107,9 +107,9 @@ func TestRetentionConfigAndExplicitSensitivePurge(t *testing.T) {
 	if purge.EvidenceRemoved != 1 || purge.AuditRemoved < 1 {
 		t.Fatalf("old source data not purged: %+v", purge)
 	}
-    if _, err := db.Ingest(auditEvidence("fresh", "lab-a", "203.0.113.4", fresh), "ssh", fresh); err != nil {
-        t.Fatal(err)
-    }
+	if _, err := db.Ingest(auditEvidence("fresh", "lab-a", "203.0.113.4", fresh), "ssh", fresh); err != nil {
+		t.Fatal(err)
+	}
 	view, err := db.ReadNodeAudit("lab-a", "ssh", 32)
 	if err != nil {
 		t.Fatal(err)

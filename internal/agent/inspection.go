@@ -32,6 +32,7 @@ type Inspection struct {
  Acceptance string `json:"acceptance"`
  Enforcement string `json:"enforcement"`
  KernelVerified bool `json:"kernel_verified"`
+ ReadbackVerified bool `json:"backend_readback_verified"`
  KernelObservedAt *time.Time `json:"kernel_observed_at,omitempty"`
  BackendError string `json:"backend_error,omitempty"`
  SignedDesired []DecisionView `json:"signed_desired"`
@@ -120,8 +121,8 @@ func InspectRuntime(ctx context.Context,configPath,filterIP string,now time.Time
   applied,err:=backend.Inspect(ctx)
   if err!=nil{view.Enforcement="unavailable";view.BackendError=err.Error();return view,nil}
   if applied.Simulated{return Inspection{},errors.New("real backend returned simulated state")}
-  view.Enforcement="inspected"
-  view.KernelVerified=true
+  view.Enforcement="backend_inspected"
+  view.ReadbackVerified=true
   view.KernelObservedAt=&applied.ObservedAt
   view.BackendObserved=record(applied.Decisions,now,"unknown_backend",source)
   for i:=range view.BackendObserved {

@@ -67,6 +67,8 @@ The controller host and the operator jump host addresses must be in each agent's
 | High event-cardinality stress fixture | Bounded memory and queues; count dropped/sampled events |
 | 1,000 simulated agents (later) | Controller handles snapshots/acks without correctness degradation |
 
+For repeatable dashboard setup and access on the `pve05` lab, see the [Proxmox monitoring runbook](observability.md#four-vm-proxmox-lab).
+
 ## Measurements to record
 
 - `event_to_policy_seconds`: from last qualifying verified observation to signed policy availability.

@@ -98,7 +98,7 @@ func New(r auth.Registry, db *store.DB, keyID string, key ed25519.PrivateKey, cl
 			return float64(n)
 		}),
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "fleetguard_controller_enforcement_enabled",
-			Help: "Always 0: the controller is observe-only and publishes empty policies."}, func() float64 { return 0 }),
+			Help: "Always 0: the controller does not enforce policies."}, func() float64 { return 0 }),
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "fleetguard_controller_info",
 			Help: "Build and mode information.", ConstLabels: prometheus.Labels{"version": buildinfo.Version, "mode": "observe"}}, func() float64 { return 1 }),
 	)

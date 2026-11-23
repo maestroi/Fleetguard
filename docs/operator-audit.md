@@ -1,6 +1,6 @@
 # Fleetguard operator audit, readback and retention (issue #14)
 
-**Status: experimental, read-only inspection; no API to enable enforcement.** The controller still publishes signed **empty** policies. [Prometheus exporters, /metrics, alert rules and Grafana dashboards are separate issue #35](https://github.com/maestroi/Fleetguard/issues/35).
+**Status: experimental, read-only inspection; no API to enable enforcement.** The controller publishes signed empty policies by default. [Local lab approval](correlation.md#approve-a-scoped-decision-in-the-isolated-lab) can publish a short-lived decision. [Prometheus exporters, /metrics, alert rules and Grafana dashboards are separate issue #35](https://github.com/maestroi/Fleetguard/issues/35).
 
 ## Agent: signed desired vs accepted vs runtime readback
 

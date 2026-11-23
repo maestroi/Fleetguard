@@ -245,8 +245,8 @@ func (s *DB) Ingest(e protocol.Evidence, group string, now time.Time) (duplicate
 	return duplicate, err
 }
 
-// Snapshot returns an idempotent signed *empty* desired-state snapshot for the
-// authenticated node/group. It does not convert evidence into a ban.
+// Snapshot returns the current signed desired state for the authenticated node
+// and group. When the current policy expires, it publishes an empty snapshot.
 func (s *DB) Snapshot(node, group, keyID string, key ed25519.PrivateKey, now time.Time) (protocol.SignedSnapshot, uint64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -274,24 +274,10 @@ func (s *DB) Snapshot(node, group, keyID string, key ed25519.PrivateKey, now tim
 				return nil
 			}
 		}
-		if revision == ^uint64(0) {
-			return errors.New("snapshot revision overflow")
+		envelope, err = s.writeSnapshot(node, group, keyID, key, revision, now, now.Add(2*time.Minute), []protocol.Decision{})
+		if err == nil {
+			revision++
 		}
-		revision++
-		snap := protocol.Snapshot{Schema: protocol.SchemaVersion, Revision: revision, IssuedAt: now.UTC(), ExpiresAt: now.Add(2 * time.Minute).UTC(), Audience: protocol.Audience{ServiceGroup: group, NodeID: node}, Decisions: []protocol.Decision{}, KeyID: keyID}
-		envelope, err = protocol.SignSnapshot(snap, key)
-		if err != nil {
-			return err
-		}
-		raw, err := json.Marshal(envelope)
-		if err != nil {
-			return err
-		}
-		_, err = s.exec("INSERT INTO snapshots(node_id,group_id,revision,expires_at,envelope) VALUES(?,?,?,?,?) ON CONFLICT(node_id,group_id) DO UPDATE SET revision=excluded.revision,expires_at=excluded.expires_at,envelope=excluded.envelope", node, group, strconv.FormatUint(revision, 10), instant(snap.ExpiresAt), string(raw))
-		if err != nil {
-			return err
-		}
-		_, err = s.exec("INSERT INTO audit(received_at,kind,node_id,detail) VALUES(?,?,?,?)", instant(now), "policy_published", node, group+" revision="+strconv.FormatUint(revision, 10))
 		return err
 	})
 	return envelope, revision, err

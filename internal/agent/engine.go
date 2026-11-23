@@ -112,7 +112,13 @@ func NewEngine(o EngineOptions) (*Engine, error) {
 	// The original acceptance time is trusted only from the private state file.
 	snap, err := protocol.VerifySignedSnapshot(*state.Signed, o.Keys, o.Audience, state.Revision-1, state.AcceptedAt)
 	if err != nil {
-		return nil, fmt.Errorf("stored signature/identity/revision invalid: %w", err)
+		// Fail closed without bricking startup (e.g. the signer was rotated out
+		// of trusted keys): restore no decisions but keep the revision watermark,
+		// so older snapshots stay rejected until a fresh one is accepted.
+		e.status.OfflineExpired = true
+		e.status.InvalidSnapshots++
+		e.setError(fmt.Errorf("stored snapshot not restored: %w", err))
+		return e, nil
 	}
 	if snap.Revision != state.Revision {
 		return nil, errors.New("persisted watermark disagrees with signed revision")

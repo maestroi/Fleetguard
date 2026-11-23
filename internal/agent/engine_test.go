@@ -355,7 +355,15 @@ func TestRestartDoesNotTrustAlteredPersistedSignature(t *testing.T) {
 	altered := *store.state.Signed
 	altered.SignatureBase64 = "invalid"
 	store.state.Signed = &altered
-	if _, err := NewEngine(e.options); err == nil {
+	restarted, err := NewEngine(e.options)
+	if err != nil {
+		t.Fatal("unverifiable persisted state must not block startup:", err)
+	}
+	if restarted.snapshot != nil || !restarted.Status().OfflineExpired || restarted.Status().InvalidSnapshots != 1 {
 		t.Fatal("modified persisted signature was trusted on restart")
+	}
+	// The watermark survives: replaying the same (or an older) revision is rejected.
+	if _, err := restarted.Accept(context.Background(), snapshot(t, priv, *now, 1, "203.0.113.42/32")); protocol.Reason(err) != protocol.ReasonReplay {
+		t.Fatal("replayed revision not rejected as replay after discarding unverifiable state:", err)
 	}
 }

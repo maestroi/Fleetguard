@@ -42,8 +42,9 @@ The agent writes JSON status lines (revision, last successful poll, applied/simu
 
 1. The runtime config, token, trusted keys and safety policy are **root-owned 0600** in symlink-free root-owned directories. The state directory is persistent `/var/lib/fleetguard`, root-owned 0700, including safe parent directories.
 2. Local safety policy `mode` is `enforce`, management interfaces and controller IPs are protected, and `host_input_verified` is set only after VM INPUT priority/management-path packet tests. The exact `lab_confirm` value is `disposable-vm-console-ready`.
-3. Operator pre-provisions the Fleetguard-owned `hash:ip` sets; the adapter manages only their runtime entries and matching scoped rich rules. See [firewalld backend guide](firewalld-backend.md). FORWARD/Docker traffic is unsupported.
-4. Use short decision TTLs, and leave the controller's automatic promotion disabled during the lab phase. Existing controller snapshots are **empty** until a later issue adds controlled signed decisions.
+3. The INPUT interface is bound to the zone **permanently** (`firewall-cmd --permanent --zone=<zone> --add-interface=<nic>`). If the binding is runtime-only, `firewall-cmd --reload` removes it and the backend fails closed until the binding is restored.
+4. Operator pre-provisions the Fleetguard-owned `hash:ip` sets; the adapter manages only their runtime entries and matching scoped rich rules. See [firewalld backend guide](firewalld-backend.md). FORWARD/Docker traffic is unsupported.
+5. Use short decision TTLs. The controller publishes a lab decision only after [explicit operator approval](correlation.md#approve-a-scoped-decision-in-the-isolated-lab).
 
 Launch only after isolated-VM gates are satisfied:
 
@@ -60,12 +61,12 @@ sudo fleetguardctl emergency-disable -state-dir /var/lib/fleetguard \\
 
 The CLI creates a root-owned latch **before** attempting backend connection/removal. It clears only the fingerprinted owned runtime IP sets and exact generated rich rules; any D-Bus failure is reported as a partial cleanup failure. A running agent independently sees the latch on the next reconcile and attempts cleanup too. Restarting the agent never removes this emergency latch; only an authorized local operator may deliberately clear it.
 
-**Critical crash limitation:** the current pre-provisioned runtime IP sets do not use kernel timeouts. Clean shutdown attempts to clear them, and restart/reload reconciliation expires them, but SIGKILL, host power failure or an agent that never restarts can leave runtime drops in place. This remains a mandatory real-lab/watchdog gate before production adoption. The safety latch must live in persistent `/var/lib/fleetguard`, **not** a tmpfs-only `/run` path.
+**Crash handling:** the pre-provisioned runtime IP sets do not use kernel timeouts. Run the agent with [`deploy/systemd/fleetguard-agent.service`](../deploy/systemd/fleetguard-agent.service), which requires systemd 254 or later. After a crash or SIGKILL, it restarts within 1 s, and startup reconciliation removes expired drops. Once the restart limit is exhausted, `OnFailure` runs [`fleetguard-agent-emergency.service`](../deploy/systemd/fleetguard-agent-emergency.service) to latch emergency disable and remove owned drops. A reboot clears runtime entries. An agent that hangs without exiting is not yet covered and needs a systemd watchdog. A stored snapshot that no longer verifies, for example after signer rotation, is not restored. The agent still starts and keeps its revision watermark. The safety latch must live in persistent `/var/lib/fleetguard`, **not** a tmpfs-only `/run` path.
 
 ## Test coverage and remaining validation
 
 Run `go test -race ./internal/agent/... ./internal/safety/... ./internal/firewall/...`. The suite includes signature changes, replay, protected sources, disk-full acceptance, restart after partial decision expiry, offline TTL, emergency-disable errors, spoofable evidence rejection, firewalld reload using a fake backend, authenticated TLS polling, and bounded pending acks.
 
-**Still required before production:** a disposable-VM packet-path test with known actual source IPs and Tailscale/SSH verified before and after, agent SIGKILL recovery/watchdog verification, controlled controller signing of nonempty decisions, and external health/alerting. A mocked readback cannot prove kernel packet order.
+**Still required before production:** a disposable-VM packet-path test with known actual source IPs and Tailscale/SSH verified before and after, agent SIGKILL recovery/watchdog verification, verification of controller-issued decisions, and external health/alerting. A mocked readback cannot prove kernel packet order.
 
 See [homelab plan](homelab-poc.md) and [issue #9](https://github.com/maestroi/Fleetguard/issues/9).

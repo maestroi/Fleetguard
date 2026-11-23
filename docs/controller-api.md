@@ -1,6 +1,6 @@
 # Controller API: authenticated, observe-only lab service (issue #5)
 
-**Experimental**. This is an opt-in HTTPS **control-plane transport** for lab nodes. It authenticates and stores bounded evidence, provides **empty** signed desired-state snapshots, and records *client-reported* acknowledgement states. It neither correlates events into bans (#6) nor validates a host's protected paths (#7), nor manages a firewall (#8–#9). Do **not** expose it to the public internet or deploy it on production validators.
+**Experimental**. This is an opt-in HTTPS **control-plane transport** for lab nodes. It authenticates and stores bounded evidence, provides signed desired-state snapshots, and records *client-reported* acknowledgement states. It neither correlates events into bans (#6) nor validates a host's protected paths (#7), nor manages a firewall (#8–#9). Do **not** expose it to the public internet or deploy it on production validators.
 
 ## Safety and trust model
 
@@ -9,7 +9,7 @@
 - The operator keeps the local JSON registry (`chmod 600`) with a distinct SHA-256 digest for each independently generated, high-entropy bearer token. The plaintext token is not stored by Fleetguard. Credentials are bound to an exact `X-Fleetguard-Node-ID` and **cannot** be changed over HTTP.
 - Registry owns group membership and allowed service names. `node_id` and `service` inside evidence are untrusted claims and must match their independently authenticated identity/scope. A removed/revoked node cannot submit evidence, retrieve snapshots, or acknowledge policy. Edit the registry and `kill -HUP <controller-pid>` to reload and audit changes (or restart).
 - The controller's private Ed25519 signer stays on the controller host as a mode `0600` file. Public verification key provisioning and agent replay persistence remain future work (#9). HTTP TLS is not a replacement for policy signatures.
-- Every snapshot is **complete, node-specific and empty**, with a finite 2-minute TTL. Its revision is monotonic in SQLite per node/group; retry before expiry returns the same exact signed envelope. No event ever causes a drop decision in this release.
+- Snapshots are complete and node-specific. Empty snapshots have a two-minute TTL. A [local lab approval](correlation.md#approve-a-scoped-decision-in-the-isolated-lab) can replace the current snapshot with a short-lived decision. Revisions increase per node and group, and repeated fetches of the current snapshot return the same signed envelope.
 - No administrative API, arbitrary shell command, dynamic firewall capability, unsigned policy promotion, or live enforcement exists. Acknowledgement states are **client reports**, not proof that firewalld applied a rule.
 
 For a containerized controller that does not require a host-installed Go toolchain or libsqlite3, use the [GHCR image and least-privilege Compose example](container-deployment.md). It runs only the observe-only controller: no Docker socket, extra capabilities, host namespace or real firewall access.
@@ -52,7 +52,7 @@ All endpoints require a verified TLS connection and a valid, non-revoked node cr
 |---|---|---|---|
 | `GET` | `/v1/health` | `{ "status":"ok", "mode":"observe", "enforcement_enabled":false }` | Authenticated only |
 | `POST` | `/v1/evidence?group=lab-ssh` | One strict `protocol.Evidence` JSON → `{ "accepted":true, "duplicate":false }` | Authenticated node identity, registry group, service scope, freshness and dedup |
-| `GET` | `/v1/snapshot?group=lab-ssh` | `protocol.SignedSnapshot` envelope with `payload_b64`, `signature_b64` | Unique signed empty snapshot for **this** node and group |
+| `GET` | `/v1/snapshot?group=lab-ssh` | `protocol.SignedSnapshot` envelope with `payload_b64`, `signature_b64` | Unique signed snapshot for **this** node and group |
 | `POST` | `/v1/ack?group=lab-ssh` | Strict `protocol.Acknowledgement` JSON → `accepted/duplicate` | Must reference latest published revision for this node/group |
 
 The response includes `Cache-Control: no-store`. Policy responses also include `X-Fleetguard-Revision`. Errors carry a machine-readable `error` code. Critical distinctions: `401` unknown/mismatched/revoked identity, `403` unauthorized group/service, `409` conflicting dedup key or unknown revision, `413` too large, `422` invalid protocol payload, `429` rate/capacity reached, `503` full queue or storage failure.

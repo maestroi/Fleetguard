@@ -93,7 +93,7 @@ func SetDescription(zone string, audience protocol.Audience, binding Binding) st
 }
 func RichRule(zone string, audience protocol.Audience, binding Binding) string {
 	name := SetName(zone, audience, binding)
-	return fmt.Sprintf(`rule family="ipv4" priority="%d" source ipset="%s" port port="%d" protocol="%s" drop`, richPriority, name, binding.Port, binding.Transport)
+	return fmt.Sprintf(`rule priority="%d" family="ipv4" source ipset="%s" port port="%d" protocol="%s" drop`, richPriority, name, binding.Port, binding.Transport)
 }
 
 type Backend struct {

@@ -45,7 +45,7 @@ Before every write, including removal, `probe` verifies:
 
 The generated rich rule is:
 ```
-rule family="ipv4" priority="-100" source ipset="<derived-name>" port port="8899" protocol="tcp" drop
+rule priority="-100" family="ipv4" source ipset="<derived-name>" port port="8899" protocol="tcp" drop
 ```
 
 The negative priority runs before ordinary firewalld primitives within the selected zone. **This does not prove INPUT or other-chain order, and is not a substitute for packet captures/counters or management-path tests.** Multiple active zones and source-based zone mappings are refused for this narrow prototype, not silently treated as protected.

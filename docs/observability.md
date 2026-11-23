@@ -84,3 +84,52 @@ On one host, with the real binaries, I ran a controller and two observe-mode age
 - Exposure-drift metrics will come once the drift auditor runs inside the agent daemon (#21).
 - `/healthz` and `/readyz` are not part of this endpoint (see #14).
 - Alert thresholds are starting points and need tuning in the four-VM lab (#11).
+
+## Four-VM Proxmox lab
+
+### Prerequisites and deployment
+
+| Guest on `pve05` | VM ID | Lab address | Role |
+|---|---:|---|---|
+| `fg-control` | 102 | `172.29.50.10` | Fleetguard API, Prometheus, Grafana |
+| `fg-agent-a` | 111 | `172.29.50.11` | Observe-only agent |
+| `fg-agent-b` | 112 | `172.29.50.12` | Observe-only agent |
+| `fg-generator` | 113 | `172.29.50.13` | Lab traffic source |
+
+The script upgrades an existing observe-only deployment. For fresh guests, first follow the [lab topology](homelab-poc.md), [controller setup](controller-api.md#build-and-private-lab-setup), and [agent setup](agent-reconciliation.md#rootless-observe-mode-lab-setup). Keep all four guests on the isolated `vmbr50` bridge. Start the guests with QEMU Guest Agent enabled and verify out-of-band access and baseline snapshots. Use `/opt/fg-issue11/server.json` on the controller and `/opt/fg-issue11/runtime.json` on each agent. Set the controller HTTPS address to `172.29.50.10:9443`, include that IP in the TLS certificate SAN, and use a separate credential and node identity per agent. Keep the agent backend simulated. Guest administration in this layout uses the QEMU guest agent. Protect the controller and access-relay addresses explicitly in the agent safety policy. Use `lo` as the local management interface for this lab layout. Marking `enp6s18` as management protects its entire /24, including the generator.
+
+From the repository root on a Linux AMD64 workstation with Go, Docker, and working root SSH access to `pve05`, run:
+
+```sh
+docker pull prom/prometheus:v3.5.0
+docker pull grafana/grafana:12.1.0
+./deploy/monitoring/proxmox-lab.sh
+```
+
+The script builds Fleetguard from the checked-out revision, temporarily serves the install archives on the lab network, and restarts the three services. It preserves the Fleetguard database and credentials. Prometheus and Grafana run on `fg-control`, and Docker is used on the workstation to extract their pinned distributions. For an alternate SSH destination, set `FG_PROXMOX_HOST` and use the same destination in the relay command below.
+
+### Dashboard access
+
+To open the dashboard, run this command on your workstation and keep it running. It requires `socat` on the workstation and `nc` on `pve05`.
+
+```sh
+socat TCP-LISTEN:3300,bind=127.0.0.1,reuseaddr,fork \
+  EXEC:'ssh -T -o BatchMode=yes root@192.168.50.171 ip netns exec fg-issue11 nc 172.29.50.10 3000'
+```
+
+Open <http://127.0.0.1:3300/d/fleetguard-overview/>. The dashboard has anonymous Viewer access within the isolated network. The SSH relay binds only to workstation loopback. The Proxmox access namespace has a single interface on `vmbr50` and no default route. Prometheus listens on controller loopback and scrapes the three Fleetguard targets over the lab network.
+
+
+### Verify and repeat
+
+With the relay running, query the provisioned datasource from the workstation:
+
+```sh
+curl -fsS 'http://127.0.0.1:3300/api/datasources/proxy/uid/prometheus/api/v1/query?query=up'
+```
+
+Allow at least one 15-second scrape interval. Expect three samples with value `1`, one for each Fleetguard service. Query `fleetguard_agent_controller_connected` the same way and expect two values of `1`. Both agents should be in observe mode. Zero active and enforced decisions are expected in this baseline.
+
+After a guest or host reboot, start the four guests as needed and rerun the deployment script. It restores the service bindings and temporary IPs for the controller and agents. For generator tests, restore its address separately with `qm guest exec 113 -- ip addr replace 172.29.50.13/24 dev enp6s18` on `pve05`. Restart the workstation relay if it has exited. Use the baseline snapshots for VM recovery, then repeat the observe-only bootstrap if the restored disks predate it.
+
+If the dashboard loads but targets are missing, check the controller's Prometheus target details with `qm guest exec 102 -- curl -fsS http://127.0.0.1:9090/api/v1/targets` on `pve05`. Check the affected guest's journal using `journalctl -u fg-issue11-agent` or `journalctl -u fg-issue11-controller`. If the dashboard itself fails to load, check `fg-issue11-grafana` on the controller and verify the local relay is still running.

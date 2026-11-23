@@ -196,6 +196,18 @@ type vote struct {
 // group scopes and application-verified proof. The input must originate from a
 // trusted store that bound node ID to authentication at ingestion.
 func Evaluate(c Config, registry auth.Registry, evidence []protocol.Evidence, now time.Time) (Report, error) {
+	return evaluate(c, registry, evidence, now, netip.Prefix{})
+}
+
+// EvaluateLab limits eligible sources to one explicitly selected private lab subnet.
+func EvaluateLab(c Config, registry auth.Registry, evidence []protocol.Evidence, now time.Time, subnet netip.Prefix) (Report, error) {
+	if !subnet.IsValid() || !subnet.Addr().Is4() || subnet != subnet.Masked() || subnet.Bits() < 24 || !subnet.Addr().IsPrivate() {
+		return Report{}, errors.New("lab evaluation requires a canonical private IPv4 subnet of /24 or narrower")
+	}
+	return evaluate(c, registry, evidence, now, subnet)
+}
+
+func evaluate(c Config, registry auth.Registry, evidence []protocol.Evidence, now time.Time, subnet netip.Prefix) (Report, error) {
 	x, err := c.validate()
 	if err != nil {
 		return Report{}, err
@@ -247,7 +259,11 @@ func Evaluate(c Config, registry auth.Registry, evidence []protocol.Evidence, no
 			continue
 		}
 		ip, err := netip.ParseAddr(e.SourceIP)
-		if err != nil || !ip.Is4() || !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsMulticast() || ip.IsUnspecified() {
+		if err != nil || !ip.Is4() || !ip.IsGlobalUnicast() || ip.IsLoopback() || ip.IsMulticast() || ip.IsUnspecified() {
+			out.EvidenceRejected++
+			continue
+		}
+		if (subnet.IsValid() && !subnet.Contains(ip)) || (!subnet.IsValid() && ip.IsPrivate()) {
 			out.EvidenceRejected++
 			continue
 		}

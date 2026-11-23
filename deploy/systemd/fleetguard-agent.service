@@ -1,0 +1,21 @@
+# Restart quickly after a crash or SIGKILL so expired drops are removed on the
+# next start. If the agent keeps failing, systemd stops retrying and OnFailure
+# latches emergency-disable, which removes only Fleetguard-owned drops.
+[Unit]
+Description=Fleetguard agent (signed-policy reconcile)
+Wants=network-online.target firewalld.service
+After=network-online.target firewalld.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+OnFailure=fleetguard-agent-emergency.service
+
+[Service]
+ExecStart=/usr/local/bin/fleetguard-agent -run -runtime-config /etc/fleetguard/agent-runtime.json
+Restart=always
+RestartSec=1
+# systemd >= 254: auto-restarts skip the failed state, so OnFailure fires only
+# once StartLimitBurst is exhausted, not on every crash.
+RestartMode=direct
+
+[Install]
+WantedBy=multi-user.target

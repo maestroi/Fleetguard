@@ -1,0 +1,8 @@
+# Triggered by fleetguard-agent.service OnFailure. Clear the latch manually
+# (rm /var/lib/fleetguard/emergency-disabled) after investigating.
+[Unit]
+Description=Fleetguard emergency disable after repeated agent failure
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/fleetguardctl emergency-disable -state-dir /var/lib/fleetguard -runtime-config /etc/fleetguard/agent-runtime.json

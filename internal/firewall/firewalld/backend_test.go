@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -80,6 +81,8 @@ func (f *fake) AddRichRule(ctx context.Context, zone, rule string) error {
 	if err := f.mutate(ctx, "add-rule", zone+"/"+rule); err != nil {
 		return err
 	}
+	// firewalld 2.x lists nonzero priority before family.
+	rule = strings.Replace(rule, `rule family="ipv4" priority="-100"`, `rule priority="-100" family="ipv4"`, 1)
 	f.rules[rule] = true
 	return nil
 }

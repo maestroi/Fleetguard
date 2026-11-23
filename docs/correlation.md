@@ -1,6 +1,6 @@
 # Rootless cross-node correlation (issue #6)
 
-**Experimental, observe-only.** This release does not automatically publish, sign or apply correlation candidates. The existing controller `/v1/snapshot` continues serving **signed empty snapshots**; no firewall rules are modified, and no new HTTP admin endpoint is exposed.
+**Experimental.** Evaluation produces advisory candidates. The controller serves signed empty snapshots by default. A local operator can explicitly approve a candidate for an isolated lab using the workflow below.
 
 ## Workflow
 
@@ -53,3 +53,30 @@ Tests cover independent reporters, same-domain reporters, noisy single nodes, sp
 ## Next safety gates
 
 Issue #7 will introduce local protected management paths and enforcement allowlists. Issue #8 provides an independently audited firewalld D-Bus backend and issue #9 adds signed desired-state reconciliation with anti-replay. **No candidate should become an enforceable policy before those gates have passed and lab tests validate all traffic paths.**
+
+
+## Approve a scoped decision in the isolated lab
+
+Run evaluation with `-lab-source-cidr 172.29.50.0/24` first and inspect the candidate's source, service, transport, port, and reporting nodes. On the controller VM, rerun it with the candidate ID and the intended lab source subnet:
+
+```sh
+fleetguard-controller -evaluate -config /opt/fg-issue11/server.json \
+  -correlation /opt/fg-issue11/correlation.json -group lab-ssh \
+  -approve-lab-candidate "$CANDIDATE_ID" -lab-source-cidr 172.29.50.0/24
+```
+
+The command reevaluates evidence using the current registry and correlation policy. Lab evaluation accepts sources only within the specified private IPv4 subnet of /24 or narrower. Approval requires a fresh eligible candidate. It excludes the controller listener address. It uses the configured signing key to atomically publish a new node-specific snapshot for each reporting node. A reporting node with an active approval causes the entire new publication to be rejected. The decision and snapshot share the same expiry. Subsequent fetches after expiry receive empty desired state.
+
+Keep the agents in observe mode for the first run. Before verifying the packet path, follow the [disposable VM firewalld setup](agent-reconciliation.md#disposable-vm-only-firewalld-experiment). Record the baseline reachability of the selected service and a second lab port. After approving the candidate, check the agent's applied revision and probe both ports from the generator. Repeat the probes after expiry, and use Grafana to compare the desired and enforced counters.
+
+### Packet-path check on pve05
+
+The generator uses `172.29.50.13` and the two agents use `172.29.50.11` and `172.29.50.12`. Use `172.29.50.13/32` as the lab source subnet for this check. With QEMU guest-agent recovery available, use the pre-provisioned Fleetguard sets in the `public` INPUT zone and verify the zone contains only the lab NIC. Use TCP 22 as the scoped service and a temporary listener on TCP 2222 as the comparison port. Probe both from the generator, and probe TCP 22 from the controller as a second source.
+
+When firewalld is active, permit TCP 9464 from the controller's lab IP only on each agent so Prometheus can scrape the enforcement metric:
+
+```sh
+firewall-cmd --zone=public --add-rich-rule='rule family="ipv4" source address="172.29.50.10/32" port port="9464" protocol="tcp" accept'
+```
+
+Reapply this runtime allow rule after a firewalld reload. With a 60-second approval, expect TCP 22 to time out from the generator during enforcement while TCP 2222 and the controller's TCP 22 probes succeed. Expect TCP 22 from the generator to recover after expiry. In Grafana, query `fleetguard_agent_enforced_decisions` over the test window. The packet probes verify the scope and the metric reports backend readback.

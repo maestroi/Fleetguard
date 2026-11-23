@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"os/signal"
 	"syscall"
@@ -26,6 +27,8 @@ func main() {
 	configPath := flags.String("config", "", "path to local JSON configuration (required)")
 	showVersion := flags.Bool("version", false, "print build version")
 	evaluate := flags.Bool("evaluate", false, "offline, observe-only correlation report (no policy publication)")
+	approve := flags.String("approve-lab-candidate", "", "publish this fresh correlation candidate ID to its reporting lab nodes")
+	labCIDR := flags.String("lab-source-cidr", "", "explicit lab source subnet for approval")
 	policyPath := flags.String("correlation", "", "private local correlation policy (required with -evaluate)")
 	groupFlag := flags.String("group", "", "authorized service group (required with -evaluate and -inspect-node)")
 	nodeFlag := flags.String("node", "", "node ID (required with -inspect-node)")
@@ -40,6 +43,12 @@ func main() {
 	if flags.NArg() != 0 {
 		fmt.Fprintln(os.Stderr, "unexpected positional arguments")
 		os.Exit(2)
+	}
+	if *approve != "" || *labCIDR != "" {
+		if !*evaluate || *inspectNode || *purgeSensitive || *labCIDR == "" {
+			fmt.Fprintln(os.Stderr, "lab evaluation requires -evaluate and -lab-source-cidr")
+			os.Exit(2)
+		}
 	}
 	if *inspectNode || *purgeSensitive {
 		if *serve || *evaluate || (*inspectNode && *purgeSensitive) || *configPath == "" {
@@ -114,7 +123,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "-evaluate requires -config, -correlation, -group and cannot be combined with -serve")
 			os.Exit(2)
 		}
-		err := evaluateOffline(*configPath, *policyPath, *groupFlag, os.Stdout)
+		err := evaluateOffline(*configPath, *policyPath, *groupFlag, *approve, *labCIDR, os.Stdout)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "fleetguard-controller:", err)
 			os.Exit(1)
@@ -144,9 +153,9 @@ func main() {
 	}
 }
 
-// evaluateOffline only reads private operator files and a local SQLite DB.
-// Unlike the public agent API, this path can inspect cross-node evidence.
-func evaluateOffline(serverPath, policyPath, group string, out io.Writer) error {
+// evaluateOffline reads the controller's local evidence and correlation policy.
+// A named lab approval explicitly authorizes writing signed snapshots.
+func evaluateOffline(serverPath, policyPath, group, approval, labCIDR string, out io.Writer) error {
 	cfg, err := auth.LoadServer(serverPath)
 	if err != nil {
 		return err
@@ -189,7 +198,16 @@ func evaluateOffline(serverPath, policyPath, group string, out io.Writer) error 
 		_ = db.AuditEvaluation(group, 0, "read_error", now)
 		return err
 	}
-	report, err := correlation.Evaluate(policy, registry, events, now)
+	var report correlation.Report
+	if labCIDR == "" {
+		report, err = correlation.Evaluate(policy, registry, events, now)
+	} else {
+		var prefix netip.Prefix
+		prefix, err = netip.ParsePrefix(labCIDR)
+		if err == nil {
+			report, err = correlation.EvaluateLab(policy, registry, events, now, prefix)
+		}
+	}
 	if err != nil {
 		_ = db.AuditEvaluation(group, 0, "rejected", now)
 		return err
@@ -204,6 +222,31 @@ func evaluateOffline(serverPath, policyPath, group string, out io.Writer) error 
 	}
 	if err := db.AuditEvaluation(group, len(report.Candidates), "observe_only", now); err != nil {
 		return err
+	}
+	if approval != "" {
+		for _, candidate := range report.Candidates {
+			if candidate.Decision == nil || candidate.Decision.ID != approval {
+				continue
+			}
+			ip := netip.MustParseAddr(candidate.Source)
+			listener, err := netip.ParseAddrPort(cfg.Listen)
+			if err != nil || ip == listener.Addr() {
+				return fmt.Errorf("candidate source is the controller or its listener is invalid")
+			}
+			key, err := auth.LoadSigningKey(cfg.SigningKeyFile)
+			if err != nil {
+				return err
+			}
+			if err := db.PublishApprovedDecision(group, candidate.Nodes, *candidate.Decision, cfg.SigningKeyID, key, now); err != nil {
+				return err
+			}
+			report.PublishedPolicies = len(candidate.Nodes)
+			break
+		}
+		if report.PublishedPolicies == 0 {
+			return fmt.Errorf("no eligible fresh correlation candidate with ID %q", approval)
+		}
+		report.Mode = "operator_approved_lab"
 	}
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")

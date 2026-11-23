@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"testing"
@@ -91,6 +92,14 @@ func TestOfflineOperatorEvaluationPersistsAuditAndDoesNotPublish(t *testing.T) {
 	if err := evaluateOffline(serverPath, policyPath, "public-rpc", approval, "172.29.51.0/24", &bytes.Buffer{}); err == nil {
 		t.Fatal("out-of-scope source approved")
 	}
+	if !isLocalAddr(netip.MustParseAddr("127.0.0.1")) {
+		t.Fatal("loopback not treated as a controller address")
+	}
+	write(serverPath, map[string]any{"mode": "observe", "listen": "0.0.0.0:9443", "tls_cert_file": "/not/needed/for/offline", "tls_key_file": "/not/needed/for/offline", "database_file": dbPath, "registry_file": registryPath, "signing_key_file": keyPath, "signing_key_id": "lab-signer"})
+	if err := evaluateOffline(serverPath, policyPath, "public-rpc", approval, "172.29.50.0/24", &bytes.Buffer{}); err == nil {
+		t.Fatal("approval allowed with wildcard listener")
+	}
+	write(serverPath, map[string]any{"mode": "observe", "listen": "127.0.0.1:9443", "tls_cert_file": "/not/needed/for/offline", "tls_key_file": "/not/needed/for/offline", "database_file": dbPath, "registry_file": registryPath, "signing_key_file": keyPath, "signing_key_id": "lab-signer"})
 	output.Reset()
 	if err := evaluateOffline(serverPath, policyPath, "public-rpc", approval, "172.29.50.0/24", &output); err != nil {
 		t.Fatal(err)

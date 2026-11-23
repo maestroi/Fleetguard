@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/netip"
 	"os"
 	"os/signal"
@@ -230,8 +231,8 @@ func evaluateOffline(serverPath, policyPath, group, approval, labCIDR string, ou
 			}
 			ip := netip.MustParseAddr(candidate.Source)
 			listener, err := netip.ParseAddrPort(cfg.Listen)
-			if err != nil || ip == listener.Addr() {
-				return fmt.Errorf("candidate source is the controller or its listener is invalid")
+			if err != nil || listener.Addr().IsUnspecified() || ip == listener.Addr() || isLocalAddr(ip) {
+				return fmt.Errorf("candidate source is the controller, or its listener is invalid or a wildcard")
 			}
 			key, err := auth.LoadSigningKey(cfg.SigningKeyFile)
 			if err != nil {
@@ -251,4 +252,21 @@ func evaluateOffline(serverPath, policyPath, group, approval, labCIDR string, ou
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")
 	return enc.Encode(report)
+}
+
+// isLocalAddr reports whether ip is assigned to any controller interface.
+// Unknown interface state is treated as local so approval fails closed.
+func isLocalAddr(ip netip.Addr) bool {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return true
+	}
+	for _, a := range addrs {
+		if n, ok := a.(*net.IPNet); ok {
+			if local, ok := netip.AddrFromSlice(n.IP); ok && local.Unmap() == ip {
+				return true
+			}
+		}
+	}
+	return false
 }

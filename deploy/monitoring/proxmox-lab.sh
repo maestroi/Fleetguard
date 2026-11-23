@@ -40,6 +40,9 @@ if ! ip netns list | awk '{print $1}' | grep -Fxq "$ns"; then
 fi
 ip netns exec "$ns" python3 -m http.server 18080 --bind 172.29.50.254 --directory "$work" >/dev/null 2>&1 &
 server=$!
+# The lab HTTP server is unauthenticated: guests verify digests passed over qm guest exec.
+controller_sha=$(sha256sum "$work/controller.tar.gz" | cut -d' ' -f1)
+agent_sha=$(sha256sum "$work/agent.gz" | cut -d' ' -f1)
 trap 'kill "$server" 2>/dev/null || true; rm -rf "$work"' EXIT
 guest() {
   local vm=$1 script=$2 result
@@ -50,9 +53,10 @@ for row in '102 10' '111 11' '112 12'; do
   read -r vm octet <<<"$row"
   guest "$vm" "ip addr replace 172.29.50.$octet/24 dev enp6s18"
 done
-guest 102 '
+guest 102 "controller_sha=$controller_sha"'
 cd /opt/fg-issue11
 curl --fail --silent --show-error --retry 3 http://172.29.50.254:18080/controller.tar.gz -o monitoring.tar.gz
+echo "$controller_sha  monitoring.tar.gz" | sha256sum -c --quiet
 tar -xzf monitoring.tar.gz
 rm monitoring.tar.gz
 systemctl stop fg-issue11-controller || true
@@ -73,6 +77,7 @@ for row in '111 11' '112 12'; do
   guest "$vm" "
 cd /opt/fg-issue11
 curl --fail --silent --show-error http://172.29.50.254:18080/agent.gz -o agent.gz
+echo \"$agent_sha  agent.gz\" | sha256sum -c --quiet
 gzip -df agent.gz
 systemctl stop fg-issue11-agent || true
 install -m 700 agent fleetguard-agent.new

@@ -59,6 +59,7 @@ func runNeverBan(args []string, out io.Writer) error {
 	category := flags.String("category", "", "infrastructure|peers|partners|edge (add only)")
 	ttl := flags.Duration("ttl", protocol.MaxNeverBanTTL, "signed protection validity (add/renew only)")
 	from := flags.Uint64("from", 0, "previous revision for diff (0 = empty baseline)")
+	revisionFlag := flags.Uint64("revision", 0, "historical revision for list (0 = latest)")
 	var additions []protocol.Protection
 	flags.Func("cidr", "canonical CIDR; repeat to add multiple (add only)", func(value string) error {
 		if len(additions) >= protocol.MaxNeverBanEntries {
@@ -85,6 +86,9 @@ func runNeverBan(args []string, out io.Writer) error {
 	}
 	if command == "add" && (len(additions) == 0 || *category == "") {
 		return errors.New("add requires -category and at least one -cidr")
+	}
+	if command != "list" && *revisionFlag != 0 {
+		return errors.New("-revision is only supported by list")
 	}
 	if command != "diff" && *from != 0 {
 		return errors.New("-from is only supported by diff")
@@ -142,7 +146,7 @@ func runNeverBan(args []string, out io.Writer) error {
 		}
 		return enc.Encode(revision)
 	}
-	current, err := db.ReadNeverBanRevision(0, keys)
+	current, err := db.ReadNeverBanRevision(*revisionFlag, keys)
 	if err != nil {
 		return err
 	}

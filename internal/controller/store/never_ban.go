@@ -23,8 +23,8 @@ var ErrNeverBanMissing = errors.New("no fleet never-ban revision exists")
 type NeverBanRevision struct {
 	List     protocol.NeverBanList       `json:"list"`
 	Envelope protocol.SignedNeverBanList `json:"envelope"`
-	Actor    string                     `json:"actor"`
-	Reason   string                     `json:"reason"`
+	Actor    string                      `json:"actor"`
+	Reason   string                      `json:"reason"`
 }
 
 // readNeverBanRevision requires the caller to hold the DB mutex. Historical

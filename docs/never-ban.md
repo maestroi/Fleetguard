@@ -69,7 +69,8 @@ Each write uses BEGIN IMMEDIATE and appends a complete verified signed revision,
 the local process UID, issuance timestamp and reason to the private controller
 SQLite database. It never replaces or deletes a previous revision; the existing
 evidence/audit retention purge does not touch this history. Lists and diffs use
-a read-only SQLite handle and require only the protection public key. Diffs
+a read-only SQLite handle and require only the protection public key. Use
+list -revision N to inspect the operator and reason for an older revision. Diffs
 report newly added (CIDR, category) pairs, with revision zero representing an
 empty baseline. Add rejects a duplicate-only batch; renew keeps membership.
 Expired lists are retained and can be renewed, but are not fresh authorization.

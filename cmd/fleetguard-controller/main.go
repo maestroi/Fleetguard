@@ -23,6 +23,13 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "never-ban" {
+		if err := runNeverBan(os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "never-ban:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	flags := flag.NewFlagSet("fleetguard-controller", flag.ExitOnError)
 	configPath := flags.String("config", "", "path to local JSON configuration (required)")
 	showVersion := flags.Bool("version", false, "print build version")

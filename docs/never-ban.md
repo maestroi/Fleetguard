@@ -1,7 +1,7 @@
 # Fleet-wide never-ban protection: protocol foundation (#41)
 
-This is the first implementation slice. It does **not** change the running
-controller, agent, firewall or any existing lab approval behavior.
+The signed protocol and local controller management are implemented. They do
+**not** change the running controller API, agent, firewall or lab approvals.
 
 ## Contract
 
@@ -29,8 +29,7 @@ protection signer.
 
 ## Remaining integration gates
 
-- Controller durable append-only state, operator identity and reason audit, CLI
-  add/list/diff and an authenticated distribution endpoint.
+- Authenticated distribution endpoint for the durable controller state.
 - Agent atomic persistent revision and signed state, separate trust configuration,
   idempotent polling, expiry and fail-safe behavior after restart.
 - Before activating a new list, remove conflicting existing temporary bans and
@@ -47,3 +46,40 @@ protection signer.
 The protocol package tests cover signing, canonical order, domain separation,
 tampering, revision replay, expiry, future issuance, additive transitions after
 expiry, IPv4/IPv6 overlap and malformed input.
+
+## Local controller management
+
+Generate a distinct protection key (not the policy signer):
+
+```sh
+fleetguardctl generate-signing-key -private /private/fleet.key -public /private/fleet.pub
+fleetguard-controller never-ban add -config /private/server.json \
+  -key-id fleet-protection -public-key /private/fleet.pub -private-key /private/fleet.key \
+  -category peers -cidr 192.0.2.0/24 -cidr 2001:db8::/48 -reason 'approved peer inventory'
+fleetguard-controller never-ban list -config /private/server.json \
+  -key-id fleet-protection -public-key /private/fleet.pub
+fleetguard-controller never-ban diff -config /private/server.json \
+  -key-id fleet-protection -public-key /private/fleet.pub -from 1
+fleetguard-controller never-ban renew -config /private/server.json \
+  -key-id fleet-protection -public-key /private/fleet.pub -private-key /private/fleet.key \
+  -reason 'scheduled refresh'
+```
+
+Each write uses BEGIN IMMEDIATE and appends a complete verified signed revision,
+the local process UID, issuance timestamp and reason to the private controller
+SQLite database. It never replaces or deletes a previous revision; the existing
+evidence/audit retention purge does not touch this history. Lists and diffs use
+a read-only SQLite handle and require only the protection public key. Diffs
+report newly added (CIDR, category) pairs, with revision zero representing an
+empty baseline. Add rejects a duplicate-only batch; renew keeps membership.
+Expired lists are retained and can be renewed, but are not fresh authorization.
+An explicit signer is required; key rotation is intentionally not implemented
+in this slice. The CLI rejects use of the controller policy key for protection
+writes. The local UID identifies the process account, not an independently
+authenticated human; use separate OS accounts and external sudo logs where
+individual attribution is required.
+
+Complete signed history grows with revisions; monitor database size and back up
+the private DB. Compaction or external audit archival and key rotation need a
+separate reviewed design before production. These commands do not yet distribute
+lists or change any existing enforcement path.

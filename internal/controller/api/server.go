@@ -29,16 +29,17 @@ const MaxBodyBytes = protocol.MaxEnvelopeBytes + 1
 const QueueCapacity = 64
 
 type Server struct {
-	registry   auth.Registry
-	registryMu sync.RWMutex
-	rateMu     sync.Mutex
-	rates      map[string]rateBucket
-	db         *store.DB
-	keyID      string
-	signingKey ed25519.PrivateKey
-	now        func() time.Time
-	queue      chan ingestRequest
-	log        *slog.Logger
+	registry     auth.Registry
+	registryMu   sync.RWMutex
+	rateMu       sync.Mutex
+	rates        map[string]rateBucket
+	db           *store.DB
+	keyID        string
+	signingKey   ed25519.PrivateKey
+	neverBanKeys map[string]ed25519.PublicKey
+	now          func() time.Time
+	queue        chan ingestRequest
+	log          *slog.Logger
 	// Metrics use only bounded labels: route patterns, HTTP codes and fixed
 	// protocol enums. Never node IDs, IPs, groups or error text.
 	reg      *prometheus.Registry
@@ -102,7 +103,7 @@ func New(r auth.Registry, db *store.DB, keyID string, key ed25519.PrivateKey, cl
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "fleetguard_controller_info",
 			Help: "Build and mode information.", ConstLabels: prometheus.Labels{"version": buildinfo.Version, "mode": "observe"}}, func() float64 { return 1 }),
 	)
-	for _, v := range []prometheus.Counter{s.storage.WithLabelValues("ingest"), s.storage.WithLabelValues("snapshot"), s.storage.WithLabelValues("ack"), s.storage.WithLabelValues("audit")} {
+	for _, v := range []prometheus.Counter{s.storage.WithLabelValues("ingest"), s.storage.WithLabelValues("snapshot"), s.storage.WithLabelValues("ack"), s.storage.WithLabelValues("audit"), s.storage.WithLabelValues("never_ban")} {
 		v.Add(0) // pre-create series so rate() and absent-alerts work from the first scrape
 	}
 	return s
@@ -151,6 +152,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/audit", s.auditView)
 	mux.HandleFunc("POST /v1/evidence", s.evidence)
 	mux.HandleFunc("GET /v1/snapshot", s.snapshot)
+	mux.HandleFunc("GET /v1/never-ban", s.neverBan)
 	mux.HandleFunc("POST /v1/ack", s.ack)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Route is a fixed mux pattern (never the raw path) to bound cardinality.

@@ -1,7 +1,8 @@
 # Fleet-wide never-ban protection: protocol foundation (#41)
 
 The signed protocol and local controller management are implemented. They do
-**not** change the running controller API, agent, firewall or lab approvals.
+now include an opt-in read-only distribution endpoint. They do **not** change
+agent, firewall or lab approval behavior.
 
 ## Contract
 
@@ -29,7 +30,6 @@ protection signer.
 
 ## Remaining integration gates
 
-- Authenticated distribution endpoint for the durable controller state.
 - Agent atomic persistent revision and signed state, separate trust configuration,
   idempotent polling, expiry and fail-safe behavior after restart.
 - Before activating a new list, remove conflicting existing temporary bans and
@@ -82,5 +82,36 @@ individual attribution is required.
 
 Complete signed history grows with revisions; monitor database size and back up
 the private DB. Compaction or external audit archival and key rotation need a
-separate reviewed design before production. These commands do not yet distribute
-lists or change any existing enforcement path.
+separate reviewed design before production. These commands do not change any existing enforcement path.
+
+## Authenticated distribution
+
+Opt in by adding both fields to the existing private controller server JSON:
+
+```json
+{
+  "never_ban_key_id": "fleet-protection",
+  "never_ban_public_key_file": "/private/fleet.pub"
+}
+```
+
+These are additional fields, not a complete server config. The server loads
+only the independent protection public key at startup, and refuses to reuse
+the decision signing key or ID. Local CLI writes must match the configured
+signer when distribution is enabled. Restart the controller to change this
+trust configuration; signer rotation remains a separate design task.
+
+Authenticated non-revoked agents can request GET /v1/never-ban over the existing
+HTTPS transport. The endpoint is fleet-wide, with no query parameters or HTTP
+mutation commands. It returns the exact signed envelope without operator
+identity or reason, with X-Fleetguard-Revision, X-Fleetguard-Expires-At and a
+content-hash ETag. An exact If-None-Match receives 304 only if the current list
+is still verified and fresh. Responses remain no-store; clients must independently
+verify and persist signed state before using conditional retrieval. Missing,
+expired, future-dated or unverifiable data returns 503; disabled returns 404.
+Authentication/revocation applies even to conditional requests.
+
+Each request reads and verifies the current durable revision (no stale fallback
+or in-memory cache). This avoids sending a superseded revision after a committed
+update but still incurs SQLite and signature verification cost; benchmark at
+fleet scale before optimizing. The agent does not yet fetch or enforce this list.

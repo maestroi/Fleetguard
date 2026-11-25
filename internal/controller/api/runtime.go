@@ -47,6 +47,15 @@ func Run(ctx context.Context, c auth.ServerConfig) error {
 		return err
 	}
 	controller := New(registry, db, c.SigningKeyID, key, time.Now, slog.Default())
+	if c.NeverBanKeyID != "" || c.NeverBanPublicKeyFile != "" {
+		pub, err := auth.LoadNeverBanPublicKey(c.NeverBanPublicKeyFile)
+		if err != nil {
+			return fmt.Errorf("load never-ban public key: %w", err)
+		}
+		if err := controller.ConfigureNeverBan(c.NeverBanKeyID, pub); err != nil {
+			return err
+		}
+	}
 	workerCtx, cancelWorker := context.WithCancel(context.Background())
 	defer cancelWorker()
 	workerDone := make(chan struct{})

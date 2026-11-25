@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"crypto/ed25519"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -11,33 +10,12 @@ import (
 	"io"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/maestroi/Fleetguard/internal/controller/auth"
 	"github.com/maestroi/Fleetguard/internal/controller/store"
 	"github.com/maestroi/Fleetguard/pkg/protocol"
 )
-
-func loadNeverBanPublicKey(path string) (ed25519.PublicKey, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	raw, err := io.ReadAll(io.LimitReader(f, 257))
-	if err != nil {
-		return nil, err
-	}
-	if len(raw) > 256 {
-		return nil, errors.New("never-ban public key file exceeds limit")
-	}
-	key, err := base64.StdEncoding.Strict().DecodeString(strings.TrimSpace(string(raw)))
-	if err != nil || len(key) != ed25519.PublicKeySize {
-		return nil, errors.New("expected base64 Ed25519 public key")
-	}
-	return ed25519.PublicKey(key), nil
-}
 
 // runNeverBan is a local operator command. No HTTP write endpoint exists.
 func runNeverBan(args []string, out io.Writer) error {
@@ -103,9 +81,18 @@ func runNeverBan(args []string, out io.Writer) error {
 	if *keyID == cfg.SigningKeyID {
 		return errors.New("fleet protection requires a distinct key ID from the policy signer")
 	}
-	pub, err := loadNeverBanPublicKey(*publicPath)
+	pub, err := auth.LoadNeverBanPublicKey(*publicPath)
 	if err != nil {
 		return err
+	}
+	if cfg.NeverBanKeyID != "" {
+		configured, err := auth.LoadNeverBanPublicKey(cfg.NeverBanPublicKeyFile)
+		if err != nil {
+			return err
+		}
+		if *keyID != cfg.NeverBanKeyID || !bytes.Equal(pub, configured) {
+			return errors.New("CLI protection signer differs from configured distribution signer")
+		}
 	}
 	keys := map[string]ed25519.PublicKey{*keyID: pub}
 	var db *store.DB

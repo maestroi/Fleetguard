@@ -39,6 +39,10 @@ type ServerConfig struct {
 	// MetricsListen enables a separate plain-HTTP GET /metrics listener.
 	// Empty (default) disables it.
 	MetricsListen string `json:"metrics_listen,omitempty"`
+
+	// Both fields are required to opt in to authenticated protection distribution.
+	NeverBanKeyID         string `json:"never_ban_key_id,omitempty"`
+	NeverBanPublicKeyFile string `json:"never_ban_public_key_file,omitempty"`
 }
 
 type Node struct {
@@ -131,7 +135,34 @@ func LoadServer(path string) (ServerConfig, error) {
 	if !idPattern.MatchString(c.SigningKeyID) {
 		return c, errors.New("invalid signing key ID")
 	}
+	if (c.NeverBanKeyID == "") != (c.NeverBanPublicKeyFile == "") {
+		return c, errors.New("never-ban distribution requires both key ID and public key file")
+	}
+	if c.NeverBanKeyID != "" && (!idPattern.MatchString(c.NeverBanKeyID) || c.NeverBanKeyID == c.SigningKeyID || !filepath.IsAbs(c.NeverBanPublicKeyFile) || filepath.Clean(c.NeverBanPublicKeyFile) != c.NeverBanPublicKeyFile) {
+		return c, errors.New("never-ban distribution requires a distinct valid key ID and clean absolute public key path")
+	}
 	return c, nil
+}
+
+// LoadNeverBanPublicKey loads the public half of the independent protection signer.
+func LoadNeverBanPublicKey(path string) (ed25519.PublicKey, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	raw, err := io.ReadAll(io.LimitReader(f, 257))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > 256 {
+		return nil, errors.New("never-ban public key file exceeds limit")
+	}
+	key, err := base64.StdEncoding.Strict().DecodeString(strings.TrimSpace(string(raw)))
+	if err != nil || len(key) != ed25519.PublicKeySize {
+		return nil, errors.New("expected base64 Ed25519 public key")
+	}
+	return ed25519.PublicKey(key), nil
 }
 
 func LoadRegistry(path string) (Registry, error) {

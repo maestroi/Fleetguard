@@ -411,17 +411,36 @@ func TestNeverBanMetricsBoundedAndLintClean(t *testing.T) {
 	c.now = func() time.Time { return *env.now }
 	body, got := scrape(t, c)
 	expect(t, got, map[string]float64{
-		"fleetguard_agent_protection_required":                              1,
-		"fleetguard_agent_protection_revision":                              3,
-		"fleetguard_agent_protection_entries":                               1,
-		"fleetguard_agent_protection_fresh":                                 1,
-		"fleetguard_agent_protection_withheld_decisions":                    1,
-		"fleetguard_agent_protection_updates_total,result=accepted":         1,
-		"fleetguard_agent_decisions_rejected_total,reason=protected_source": 1,
+		"fleetguard_agent_protection_required":                                    1,
+		"fleetguard_agent_protection_revision":                                    3,
+		"fleetguard_agent_protection_entries":                                     1,
+		"fleetguard_agent_protection_fresh":                                       1,
+		"fleetguard_agent_protection_withheld_decisions":                          1,
+		"fleetguard_agent_protection_updates_total,result=accepted":               1,
+		"fleetguard_agent_decisions_rejected_total,reason=protected_source":       1,
+		"fleetguard_agent_protection_rejections_by_category_total,category=peers": 1,
+		"fleetguard_agent_protection_rejections_by_category_total,category=edge":  0,
 	})
 	for _, leak := range []string{"192.0.2", "203.0.113"} {
 		if strings.Contains(body, leak) {
 			t.Fatalf("metrics leaked address %s", leak)
 		}
+	}
+}
+
+// #41 acceptance: the fleet list never removes or narrows a local protection.
+// 10.0.0.0/8 is only in the root-owned local policy, not in the fleet list.
+func TestFleetListNeverRemovesLocalProtection(t *testing.T) {
+	env := nbFixture(t, true)
+	ctx := context.Background()
+	if err := env.e.AcceptNeverBan(ctx, signList(t, fleetKey, "fleet", 1, *env.now, "192.0.2.0/24")); err != nil {
+		t.Fatal(err)
+	}
+	ack, err := env.e.Accept(ctx, multiSnapshot(t, env.priv, *env.now, 1, "10.5.6.7/32"))
+	if err == nil || ack.State != protocol.StateRejected || ack.Reason != protocol.ReasonScopeMismatch {
+		t.Fatalf("locally protected source accepted with fleet list present: %+v %v", ack, err)
+	}
+	if len(env.fake.applied) != 0 {
+		t.Fatal("locally protected ban installed")
 	}
 }

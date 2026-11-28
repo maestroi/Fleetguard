@@ -63,6 +63,7 @@ var (
 	descProtWithheld  = desc("protection_withheld_decisions", "Central decisions withheld because they overlap a protection.")
 	descProtUpdates   = desc("protection_updates_total", "Fleet never-ban update outcomes.", "result")
 	descRejected      = desc("decisions_rejected_total", "Ban decisions refused by fleet protection, by bounded reason.", "reason")
+	descRejectedCat   = desc("protection_rejections_by_category_total", "protected_source refusals by the matching protection category.", "category")
 	descProtRemovals  = desc("protection_conflict_removals_total", "Installed bans removed because a protection now covers them.")
 	descProtCleanFail = desc("protection_cleanup_failures_total", "Reconciles where the backend still reported a protected ban.")
 )
@@ -128,6 +129,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 		counter(descProtUpdates, st.InvalidProtection, "invalid")
 		counter(descRejected, st.RejectedProtectedSource, "protected_source")
 		counter(descRejected, st.RejectedProtectionStale, "protection_stale")
+		for i, category := range ProtectionCategories {
+			counter(descRejectedCat, st.RejectedByCategory[i], string(category))
+		}
 		counter(descProtRemovals, st.ProtectionRemovals)
 		counter(descProtCleanFail, st.ProtectionCleanupFailures)
 	}

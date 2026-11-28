@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"net/netip"
 	"reflect"
 	"slices"
 	"sync"
@@ -25,10 +26,11 @@ type Engine struct {
 	local     map[string]protocol.Decision
 	status    Status
 	// Fleet never-ban protection (see never_ban.go).
-	prot       protocol.NeverBanList
-	protSigned *protocol.SignedNeverBanList
-	protIndex  *protocol.ProtectionIndex
-	applied    map[string]bool // decision IDs the backend last reported installed
+	prot         protocol.NeverBanList
+	protSigned   *protocol.SignedNeverBanList
+	protIndex    *protocol.ProtectionIndex
+	applied      map[string]bool      // decision IDs the backend last reported installed
+	protCategory map[netip.Prefix]int // index into ProtectionCategories
 }
 type EngineOptions struct {
 	Audience          protocol.Audience
@@ -80,6 +82,7 @@ type Status struct {
 	ProtectionUpdates         uint64    `json:"protection_updates"`
 	InvalidProtection         uint64    `json:"invalid_protection"`
 	RejectedProtectedSource   uint64    `json:"rejected_protected_source"`
+	RejectedByCategory        [4]uint64 `json:"rejected_by_category"` // ProtectionCategories order
 	RejectedProtectionStale   uint64    `json:"rejected_protection_stale"`
 	ProtectionRemovals        uint64    `json:"protection_removals"`
 	ProtectionCleanupFailures uint64    `json:"protection_cleanup_failures"`
@@ -273,7 +276,7 @@ func (e *Engine) Accept(ctx context.Context, envelope protocol.SignedSnapshot) (
 	e.snapshot = &signed
 	for _, d := range signed.Decisions {
 		if e.protected(d) {
-			e.status.RejectedProtectedSource++ // withheld per entry in reconcile; rest still applies
+			e.countProtectedRejection(d) // withheld per entry in reconcile; rest still applies
 		}
 	}
 	e.status.Revision = signed.Revision
@@ -459,7 +462,7 @@ func (e *Engine) AddLocal(ctx context.Context, d protocol.Decision, proof protoc
 		return errors.New("fleet never-ban protection missing or stale; local ban refused")
 	}
 	if e.protected(d) {
-		e.status.RejectedProtectedSource++
+		e.countProtectedRejection(d)
 		return errors.New("local ban source overlaps fleet never-ban protection")
 	}
 	synthetic := protocol.Snapshot{Schema: protocol.SchemaVersion, Revision: 1, IssuedAt: now, ExpiresAt: now.Add(protocol.MaxSnapshotTTL),

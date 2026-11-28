@@ -16,9 +16,9 @@ import (
 // It is immutable after construction and safe for concurrent reads.
 type ProtectionIndex struct {
 	set    map[netip.Prefix]struct{}
-	addrs  []netip.Addr // sorted network addresses of all protections
-	v4bits []int        // distinct IPv4 lengths present
-	v6bits []int        // distinct IPv6 lengths present
+	sorted []netip.Prefix // all protections sorted by network address
+	v4bits []int          // distinct IPv4 lengths present
+	v6bits []int          // distinct IPv6 lengths present
 }
 
 // NewProtectionIndex indexes already validated canonical prefixes. Invalid
@@ -34,14 +34,14 @@ func NewProtectionIndex(prefixes []netip.Prefix) *ProtectionIndex {
 			continue
 		}
 		idx.set[p] = struct{}{}
-		idx.addrs = append(idx.addrs, p.Addr())
+		idx.sorted = append(idx.sorted, p)
 		if p.Addr().Is4() {
 			v4[p.Bits()] = true
 		} else {
 			v6[p.Bits()] = true
 		}
 	}
-	slices.SortFunc(idx.addrs, netip.Addr.Compare)
+	slices.SortFunc(idx.sorted, func(a, b netip.Prefix) int { return a.Addr().Compare(b.Addr()) })
 	for bits := range 129 {
 		if v4[bits] {
 			idx.v4bits = append(idx.v4bits, bits)
@@ -77,8 +77,14 @@ func (idx *ProtectionIndex) Overlaps(source netip.Prefix) bool {
 	if !source.IsValid() {
 		return true
 	}
-	if idx == nil || len(idx.set) == 0 {
-		return false
+	_, ok := idx.Match(source)
+	return ok
+}
+
+// Match returns one protection overlapping a valid source, if any.
+func (idx *ProtectionIndex) Match(source netip.Prefix) (netip.Prefix, bool) {
+	if idx == nil || len(idx.set) == 0 || !source.IsValid() {
+		return netip.Prefix{}, false
 	}
 	source = source.Masked()
 	bits := idx.v6bits
@@ -89,10 +95,14 @@ func (idx *ProtectionIndex) Overlaps(source netip.Prefix) bool {
 		if length > source.Bits() {
 			break
 		}
-		if _, ok := idx.set[netip.PrefixFrom(source.Addr(), length).Masked()]; ok {
-			return true
+		candidate := netip.PrefixFrom(source.Addr(), length).Masked()
+		if _, ok := idx.set[candidate]; ok {
+			return candidate, true
 		}
 	}
-	i, _ := slices.BinarySearchFunc(idx.addrs, source.Addr(), netip.Addr.Compare)
-	return i < len(idx.addrs) && source.Contains(idx.addrs[i])
+	i, _ := slices.BinarySearchFunc(idx.sorted, source.Addr(), func(p netip.Prefix, a netip.Addr) int { return p.Addr().Compare(a) })
+	if i < len(idx.sorted) && source.Contains(idx.sorted[i].Addr()) {
+		return idx.sorted[i], true
+	}
+	return netip.Prefix{}, false
 }

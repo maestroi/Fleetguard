@@ -141,10 +141,27 @@ func (e *Engine) loadProtection(now time.Time) error {
 	return nil
 }
 
+// ProtectionCategories fixes the order of Status.RejectedByCategory.
+var ProtectionCategories = [4]protocol.ProtectionCategory{protocol.ProtectionInfrastructure, protocol.ProtectionPeers, protocol.ProtectionPartners, protocol.ProtectionEdge}
+
 func (e *Engine) setProtection(list protocol.NeverBanList, signed *protocol.SignedNeverBanList, acceptedAt time.Time) {
 	e.prot = list
 	e.protSigned = signed
 	e.protIndex = protocol.NeverBanIndex(list)
+	e.protCategory = make(map[netip.Prefix]int, len(list.Entries))
+	for _, entry := range list.Entries {
+		p, err := netip.ParsePrefix(entry.CIDR)
+		if err != nil {
+			continue
+		}
+		for i, c := range ProtectionCategories {
+			if c == entry.Category {
+				if prev, ok := e.protCategory[p]; !ok || i < prev {
+					e.protCategory[p] = i // deterministic for multi-category CIDRs
+				}
+			}
+		}
+	}
 	e.status.ProtectionRevision = list.Revision
 	e.status.ProtectionEntries = e.protIndex.Len()
 	e.status.ProtectionExpiresAt = list.ExpiresAt
@@ -201,6 +218,16 @@ func (e *Engine) protectionAllowsExisting(now time.Time) bool {
 // protectionAllowsNew reports whether a NEW ban may be accepted.
 func (e *Engine) protectionAllowsNew(now time.Time) bool {
 	return !e.options.NeverBanRequired || e.protectionFresh(now)
+}
+
+// countProtectedRejection records a refused ban by the matching category.
+func (e *Engine) countProtectedRejection(d protocol.Decision) {
+	e.status.RejectedProtectedSource++
+	if source, err := netip.ParsePrefix(d.Source); err == nil {
+		if match, ok := e.protIndex.Match(source); ok {
+			e.status.RejectedByCategory[e.protCategory[match]]++
+		}
+	}
 }
 
 func (e *Engine) protected(d protocol.Decision) bool {

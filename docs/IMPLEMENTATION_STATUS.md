@@ -26,7 +26,7 @@ recorded for enforcement paths. Issues therefore stay open.
 | #43 | P1 | Fleet port-scan detection | #10 | correlation base merged | #27 | unit | trust domains, rollout stages |
 | #44 | P0 | Manual fleet-wide incident ban | #41 | not started | – | – | bulk protocol design (≥5,000 entries) |
 | #45 | epic | Proactive fleet defense | – | tracking | – | – | – |
-| #47 | P0 | Watchdog + independent TTL recovery | #9 | not started | – | – | – |
+| #47 | P0 | Watchdog + independent TTL recovery | #9 | code complete in draft PR #49; lab pending | #49 | unit (hung backend, ping logic, sd_notify) | lab fault-injection run; firewalld fully wedged is uncovered; ~1–2 s gap after crash |
 
 ## #41 detail (2026-11-28)
 Acceptance:

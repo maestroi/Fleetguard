@@ -83,3 +83,36 @@ groups:
         labels: {severity: warning}
         annotations:
           summary: "Many unauthenticated requests to the controller"
+
+      # Fleet never-ban protection (#41)
+      - alert: FleetguardProtectionStale
+        expr: fleetguard_agent_protection_required == 1 and fleetguard_agent_protection_fresh == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "Agent {{ $labels.instance }} has no fresh fleet never-ban list; new bans refused, existing bans lapse"
+
+      - alert: FleetguardProtectionExpiringSoon
+        expr: fleetguard_controller_never_ban_expires_timestamp_seconds > 0 and (fleetguard_controller_never_ban_expires_timestamp_seconds - time()) < 4 * 3600
+        labels: {severity: warning}
+        annotations:
+          summary: "Fleet never-ban list expires within 4h; run never-ban renew"
+
+      - alert: FleetguardProtectionRevisionMismatch
+        expr: fleetguard_agent_protection_revision < scalar(max(fleetguard_controller_never_ban_revision))
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Agent {{ $labels.instance }} protection revision behind the controller"
+
+      - alert: FleetguardProtectionCleanupFailed
+        expr: increase(fleetguard_agent_protection_cleanup_failures_total[10m]) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: "Agent {{ $labels.instance }} backend still reports a ban on a protected source"
+
+      - alert: FleetguardProtectionUpdateRejected
+        expr: increase(fleetguard_agent_protection_updates_total{result="invalid"}[15m]) > 3
+        labels: {severity: critical}
+        annotations:
+          summary: "Agent {{ $labels.instance }} rejecting fleet never-ban updates (signature/replay/removal)"

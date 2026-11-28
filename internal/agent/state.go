@@ -59,46 +59,68 @@ func (s FileStore) checkDir() error {
 	}
 	return nil
 }
-func (s FileStore) Load() (DurableState, error) {
+
+// readPrivate reads a bounded, private, single-link regular file from the
+// checked state directory. Missing files return (nil, nil).
+func (s FileStore) readPrivate(name string, limit int) ([]byte, error) {
 	if err := s.checkDir(); err != nil {
-		return DurableState{}, err
+		return nil, err
 	}
-	path := filepath.Join(s.Dir, stateFilename)
+	path := filepath.Join(s.Dir, name)
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return DurableState{Version: 1}, nil
+		return nil, nil
 	}
 	if err != nil {
-		return DurableState{}, err
+		return nil, err
 	}
 	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Mode()&os.ModeSymlink != 0 {
-		return DurableState{}, errors.New("state file must be a private regular file")
+		return nil, errors.New("state file must be a private regular file")
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok || stat.Nlink != 1 || (s.RequireRoot && stat.Uid != 0) {
-		return DurableState{}, errors.New("unsafe owner or hard-linked state file")
+		return nil, errors.New("unsafe owner or hard-linked state file")
 	}
 	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
-		return DurableState{}, err
+		return nil, err
 	}
 	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, maxStateBytes+1))
+	data, err := io.ReadAll(io.LimitReader(f, int64(limit)+1))
 	if err != nil {
-		return DurableState{}, err
+		return nil, err
 	}
-	if len(data) > maxStateBytes {
-		return DurableState{}, errors.New("persisted state exceeds bound")
+	if len(data) > limit {
+		return nil, errors.New("persisted state exceeds bound")
 	}
-	var state DurableState
+	return data, nil
+}
+
+// decodeStrict rejects unknown fields and trailing data.
+func decodeStrict(data []byte, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&state); err != nil {
-		return DurableState{}, fmt.Errorf("decode persisted state: %w", err)
+	if err := dec.Decode(v); err != nil {
+		return fmt.Errorf("decode persisted state: %w", err)
 	}
 	var extra any
 	if err := dec.Decode(&extra); err != io.EOF {
-		return DurableState{}, errors.New("trailing state data")
+		return errors.New("trailing state data")
+	}
+	return nil
+}
+
+func (s FileStore) Load() (DurableState, error) {
+	data, err := s.readPrivate(stateFilename, maxStateBytes)
+	if err != nil {
+		return DurableState{}, err
+	}
+	if data == nil {
+		return DurableState{Version: 1}, nil
+	}
+	var state DurableState
+	if err := decodeStrict(data, &state); err != nil {
+		return DurableState{}, err
 	}
 	if state.Version != 1 || (state.Revision == 0 && state.Signed != nil) || (state.Revision > 0 && (state.Signed == nil || state.AcceptedAt.IsZero())) {
 		return DurableState{}, errors.New("invalid persisted signed-state watermark")
@@ -106,9 +128,6 @@ func (s FileStore) Load() (DurableState, error) {
 	return state, nil
 }
 func (s FileStore) Save(state DurableState) error {
-	if err := s.checkDir(); err != nil {
-		return err
-	}
 	if state.Version != 1 || (state.Revision == 0 && state.Signed != nil) || (state.Revision > 0 && (state.Signed == nil || state.AcceptedAt.IsZero())) {
 		return errors.New("invalid state for persistence")
 	}
@@ -119,6 +138,15 @@ func (s FileStore) Save(state DurableState) error {
 	if len(data) > maxStateBytes {
 		return errors.New("persisted state too large")
 	}
+	return s.writePrivate(stateFilename, data)
+}
+
+// writePrivate atomically replaces name with data: private temp file, fsync,
+// rename, directory fsync. A crash leaves either the old or the new file.
+func (s FileStore) writePrivate(name string, data []byte) error {
+	if err := s.checkDir(); err != nil {
+		return err
+	}
 	dir, err := os.Open(s.Dir)
 	if err != nil {
 		return err
@@ -126,7 +154,7 @@ func (s FileStore) Save(state DurableState) error {
 	defer dir.Close()
 	// Random private temp + O_EXCL avoids symlink path replacement. The
 	// directory is exclusive to the agent; rename + fsync survives crashes.
-	f, err := os.CreateTemp(s.Dir, ".desired-state-*")
+	f, err := os.CreateTemp(s.Dir, ".state-*")
 	if err != nil {
 		return err
 	}
@@ -146,7 +174,7 @@ func (s FileStore) Save(state DurableState) error {
 	if err != nil {
 		return err
 	}
-	dest := filepath.Join(s.Dir, stateFilename)
+	dest := filepath.Join(s.Dir, name)
 	if info, err := os.Lstat(dest); err == nil {
 		stat, ok := info.Sys().(*syscall.Stat_t)
 		if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || !ok || stat.Nlink != 1 || (s.RequireRoot && stat.Uid != 0) {

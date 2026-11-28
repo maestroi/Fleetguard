@@ -89,6 +89,7 @@ func Open(path string) (*DB, error) {
 		`CREATE TABLE IF NOT EXISTS snapshots (node_id TEXT NOT NULL, group_id TEXT NOT NULL, revision INTEGER NOT NULL, expires_at TEXT NOT NULL, envelope TEXT NOT NULL, PRIMARY KEY(node_id,group_id))`,
 		`CREATE TABLE IF NOT EXISTS acks (node_id TEXT NOT NULL, group_id TEXT NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL, reason TEXT NOT NULL, received_at TEXT NOT NULL, PRIMARY KEY(node_id,group_id,revision,state))`,
 		`CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, received_at TEXT NOT NULL, kind TEXT NOT NULL, node_id TEXT NOT NULL, detail TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS never_ban_revisions (revision INTEGER PRIMARY KEY CHECK(revision > 0), issued_at TEXT NOT NULL, envelope TEXT NOT NULL, actor TEXT NOT NULL, reason TEXT NOT NULL)`,
 		`CREATE TRIGGER IF NOT EXISTS audit_bounded AFTER INSERT ON audit BEGIN DELETE FROM audit WHERE id <= (SELECT MAX(id) - 20000 FROM audit); END;`,
 	} {
 		if _, err := s.exec(sql); err != nil {

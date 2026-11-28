@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -23,6 +24,13 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "never-ban" {
+		if err := runNeverBan(os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "never-ban:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	flags := flag.NewFlagSet("fleetguard-controller", flag.ExitOnError)
 	configPath := flags.String("config", "", "path to local JSON configuration (required)")
 	showVersion := flags.Bool("version", false, "print build version")
@@ -237,7 +245,17 @@ func evaluateOffline(serverPath, policyPath, group, approval, labCIDR string, ou
 			if err != nil {
 				return err
 			}
-			if err := db.PublishApprovedDecision(group, candidate.Nodes, *candidate.Decision, cfg.SigningKeyID, key, now); err != nil {
+			var neverBanKeys map[string]ed25519.PublicKey
+			if cfg.NeverBanKeyID != "" {
+				pub, err := auth.LoadNeverBanPublicKey(cfg.NeverBanPublicKeyFile)
+				if err != nil {
+					return err
+				}
+				neverBanKeys = map[string]ed25519.PublicKey{cfg.NeverBanKeyID: pub}
+			}
+			if err := db.PublishApprovedDecision(group, candidate.Nodes, *candidate.Decision, cfg.SigningKeyID, key, neverBanKeys, now); err != nil {
+				// Transaction rolled back; record the refusal separately.
+				_ = db.Audit("decision_refused", "", group+" decision="+candidate.Decision.ID+" reason="+string(protocol.Reason(err)), now)
 				return err
 			}
 			report.PublishedPolicies = len(candidate.Nodes)

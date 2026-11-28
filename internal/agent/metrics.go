@@ -51,6 +51,21 @@ var (
 	descSensorEmitted  = desc("sensor_reports_emitted_total", "Denied-traffic evidence reports emitted.")
 	descSensorJournal  = desc("sensor_journal_failures_total", "Journal reader failures.")
 	descSensorSources  = desc("sensor_active_sources", "Sources tracked in the current window.")
+
+	// Fleet never-ban protection; emitted only when a protection anchor is configured.
+	descProtRequired  = desc("protection_required", "1 if new bans require a fresh fleet never-ban list.")
+	descProtRevision  = desc("protection_revision", "Accepted fleet never-ban revision (0 = none).")
+	descProtEntries   = desc("protection_entries", "Protected prefixes currently retained.")
+	descProtFresh     = desc("protection_fresh", "1 if the accepted fleet never-ban list is unexpired.")
+	descProtExpires   = desc("protection_expires_timestamp_seconds", "UNIX expiry of the accepted fleet never-ban list.")
+	descProtUpdated   = desc("protection_last_update_timestamp_seconds", "UNIX time the current fleet never-ban list was accepted.")
+	descProtUnverif   = desc("protection_unverified", "1 if retained protections no longer verify against the configured anchor.")
+	descProtWithheld  = desc("protection_withheld_decisions", "Central decisions withheld because they overlap a protection.")
+	descProtUpdates   = desc("protection_updates_total", "Fleet never-ban update outcomes.", "result")
+	descRejected      = desc("decisions_rejected_total", "Ban decisions refused by fleet protection, by bounded reason.", "reason")
+	descRejectedCat   = desc("protection_rejections_by_category_total", "protected_source refusals by the matching protection category.", "category")
+	descProtRemovals  = desc("protection_conflict_removals_total", "Installed bans removed because a protection now covers them.")
+	descProtCleanFail = desc("protection_cleanup_failures_total", "Reconciles where the backend still reported a protected ban.")
 )
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCollect(c, ch) }
@@ -99,6 +114,27 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	gauge(descLastError, b(st.LastError != ""))
 	counter(descReconcileErrs, st.ReconcileErrors)
 	ts(descLastReconcile, st.LastReconcile)
+
+	if c.cfg.NeverBanKeysFile != "" {
+		fresh := st.ProtectionRevision > 0 && !st.ProtectionUnverified && st.ProtectionExpiresAt.After(now)
+		gauge(descProtRequired, b(c.cfg.NeverBanRequired))
+		gauge(descProtRevision, float64(st.ProtectionRevision))
+		gauge(descProtEntries, float64(st.ProtectionEntries))
+		gauge(descProtFresh, b(fresh))
+		ts(descProtExpires, st.ProtectionExpiresAt)
+		ts(descProtUpdated, st.ProtectionAcceptedAt)
+		gauge(descProtUnverif, b(st.ProtectionUnverified))
+		gauge(descProtWithheld, float64(st.ProtectedWithheld))
+		counter(descProtUpdates, st.ProtectionUpdates, "accepted")
+		counter(descProtUpdates, st.InvalidProtection, "invalid")
+		counter(descRejected, st.RejectedProtectedSource, "protected_source")
+		counter(descRejected, st.RejectedProtectionStale, "protection_stale")
+		for i, category := range ProtectionCategories {
+			counter(descRejectedCat, st.RejectedByCategory[i], string(category))
+		}
+		counter(descProtRemovals, st.ProtectionRemovals)
+		counter(descProtCleanFail, st.ProtectionCleanupFailures)
+	}
 
 	if c.sensor == nil {
 		return

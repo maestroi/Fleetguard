@@ -109,6 +109,9 @@ const (
 	StateApplied   DecisionState = "applied"
 	StateRejected  DecisionState = "rejected"
 	StateError     DecisionState = "error"
+	// StatePartial means the snapshot was accepted but some decisions were
+	// withheld by protections; it is never reported as fully applied.
+	StatePartial DecisionState = "partially_applied"
 )
 
 type ReasonCode string
@@ -126,6 +129,8 @@ const (
 	ReasonClockSkew        ReasonCode = "clock_skew"
 	ReasonReplay           ReasonCode = "replay"
 	ReasonScopeMismatch    ReasonCode = "scope_mismatch"
+	ReasonProtectedSource  ReasonCode = "protected_source"
+	ReasonProtectionStale  ReasonCode = "protection_stale"
 )
 
 type Acknowledgement struct {

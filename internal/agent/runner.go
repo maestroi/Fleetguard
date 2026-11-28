@@ -16,6 +16,7 @@ import (
 	"github.com/maestroi/Fleetguard/internal/firewall/mock"
 	"github.com/maestroi/Fleetguard/internal/metrics"
 	"github.com/maestroi/Fleetguard/internal/safety"
+	"github.com/maestroi/Fleetguard/internal/sdnotify"
 	firewalldsensor "github.com/maestroi/Fleetguard/internal/sensor/firewalld"
 	"github.com/maestroi/Fleetguard/pkg/protocol"
 )
@@ -217,6 +218,11 @@ func Run(ctx context.Context, configPath string, out io.Writer) error {
 		}
 		return err
 	}
+	tickInterval := time.Duration(c.ReconcileIntervalSeconds) * time.Second
+	wd, err := newWatchdog(tickInterval, DefaultReconcileTimeout)
+	if err != nil {
+		return err
+	}
 	poller := &Poller{Engine: engine, Client: client}
 	if neverBanKeys != nil {
 		poller.NeverBan = client
@@ -245,7 +251,9 @@ func Run(ctx context.Context, configPath string, out io.Writer) error {
 	}
 	if c.MetricsListen != "" {
 		reg := metrics.NewRegistry()
-		reg.MustRegister(NewCollector(c, engine, denied))
+		collector := NewCollector(c, engine, denied)
+		collector.watchdog = wd
+		reg.MustRegister(collector)
 		go func() {
 			if err := metrics.Serve(ctx, c.MetricsListen, reg); err != nil {
 				// Telemetry must never stop expiry/reconcile; log and continue.
@@ -253,7 +261,6 @@ func Run(ctx context.Context, configPath string, out io.Writer) error {
 			}
 		}()
 	}
-	tickInterval := time.Duration(c.ReconcileIntervalSeconds) * time.Second
 	tick := time.NewTicker(tickInterval)
 	defer tick.Stop()
 	poll := time.NewTimer(0)
@@ -277,18 +284,26 @@ func Run(ctx context.Context, configPath string, out io.Writer) error {
 	// Reconcile recovered, unexpired state or clear unknown runtime entries
 	// before contacting any controller; never let a stale IP-set ban persist
 	// as apparently valid after a restart.
-	if err := engine.Tick(ctx); err != nil {
+	err = engine.Tick(ctx)
+	if err != nil {
 		slog.Error("initial local reconcile failed", "error", err)
 	}
+	wd.reconciled(err, time.Now())
 	if err := writeStatus(); err != nil {
 		return err
+	}
+	if _, err := sdnotify.Notify("READY=1"); err != nil {
+		slog.Warn("systemd readiness notification failed", "error", err)
 	}
 	for {
 		select {
 		case <-ctx.Done():
+			_, _ = sdnotify.Notify("STOPPING=1")
 			return nil
 		case <-tick.C:
-			if err := engine.Tick(ctx); err != nil {
+			err := engine.Tick(ctx)
+			wd.reconciled(err, time.Now())
+			if err != nil {
 				slog.Warn("local reconcile failed", "error", err)
 			}
 			status := engine.Status()
@@ -305,7 +320,9 @@ func Run(ctx context.Context, configPath string, out io.Writer) error {
 			} else {
 				failures = 0
 			}
-			if err := engine.Tick(ctx); err != nil {
+			err := engine.Tick(ctx)
+			wd.reconciled(err, time.Now())
+			if err != nil {
 				slog.Warn("post-poll reconcile failed", "error", err)
 			}
 			if err := writeStatus(); err != nil {

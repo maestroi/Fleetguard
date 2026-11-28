@@ -367,3 +367,43 @@ func TestRestartDoesNotTrustAlteredPersistedSignature(t *testing.T) {
 		t.Fatal("replayed revision not rejected as replay after discarding unverifiable state:", err)
 	}
 }
+
+// blockingBackend simulates a wedged firewalld: every call blocks until the
+// caller's context ends, like godbus CallWithContext against a hung daemon.
+type blockingBackend struct{ realFake }
+
+func (b *blockingBackend) Reconcile(ctx context.Context, _ []protocol.Decision) (firewall.AppliedState, error) {
+	<-ctx.Done()
+	return firewall.AppliedState{}, ctx.Err()
+}
+
+// #47: a hung backend call must not hold the engine (and its mutex) forever.
+func TestReconcileTimeoutBoundsHungBackend(t *testing.T) {
+	now := time.Date(2026, 11, 21, 21, 0, 0, 0, time.UTC)
+	priv := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{17}, 32))
+	backend := &blockingBackend{}
+	e, err := NewEngine(EngineOptions{
+		Audience: protocol.Audience{NodeID: "lab-node-a", ServiceGroup: "lab-ssh"},
+		Keys:     map[string]ed25519.PublicKey{"lab-key": priv.Public().(ed25519.PublicKey)},
+		Policy: safety.Policy{Mode: "enforce", ProtectedCIDRs: []string{"10.0.0.0/8"}, ControllerIPs: []string{"198.51.100.2"},
+			ServiceScopes:         []safety.ServiceScope{{ServiceGroup: "lab-ssh", Service: "ssh", Transport: protocol.TransportTCP, Ports: []uint16{2222}}},
+			MaxDecisionTTLSeconds: 120, MaxDecisions: 64},
+		Backend: backend, Store: &memoryStore{state: DurableState{Version: 1}}, Mode: "enforce", BackendName: "firewalld",
+		HostINPUTVerified: true, Now: func() time.Time { return now }, MaxOfflineAge: 90 * time.Second,
+		EmergencyDisabled: func() (bool, error) { return false, nil }, ReconcileTimeout: 150 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	err = e.Tick(context.Background()) // root context without deadline, as in Run
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("hung backend not bounded: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("reconcile blocked for %v", elapsed)
+	}
+	if st := e.Status(); st.LastError == "" || st.ReconcileErrors != 1 {
+		t.Fatalf("hang not reported: %+v", st)
+	}
+}

@@ -1,16 +1,35 @@
-# Restart quickly after a crash or SIGKILL so expired drops are removed on the
-# next start. If the agent keeps failing, systemd stops retrying and OnFailure
-# latches emergency-disable, which removes only Fleetguard-owned drops.
+# Hang and crash recovery (#47), all independent of the agent process:
+# - Type=notify + WatchdogSec: the agent sends WATCHDOG=1 only after a
+#   SUCCESSFUL reconcile. A hung D-Bus call, deadlock, SIGSTOP or a reconcile
+#   that keeps failing stops the pings; systemd kills the agent (SIGABRT,
+#   then SIGKILL after TimeoutStopSec).
+# - ExecStopPost runs after every stop (clean, crash, SIGKILL, watchdog) and
+#   removes only Fleetguard-owned runtime IP-set entries and rich rules.
+# - Restart quickly so recovered, still-valid signed state is re-applied. If
+#   the agent keeps failing, systemd stops retrying and OnFailure latches
+#   emergency-disable, which also removes only Fleetguard-owned drops.
+# Requires systemd >= 209 (RHEL/Alma/Rocky 8 ship 239). RestartMode= needs
+# >= 254; older versions ignore it with a warning and then OnFailure fires on
+# the FIRST crash (fail-safe: latches emergency-disable until an operator
+# clears it).
+# WatchdogSec must be >= 3x reconcile_interval_seconds + 15s reconcile
+# timeout; the agent refuses to start otherwise.
 [Unit]
 Description=Fleetguard agent (signed-policy reconcile)
 Wants=network-online.target firewalld.service
 After=network-online.target firewalld.service
-StartLimitIntervalSec=60
+StartLimitIntervalSec=120
 StartLimitBurst=5
 OnFailure=fleetguard-agent-emergency.service
 
 [Service]
+Type=notify
+NotifyAccess=main
 ExecStart=/usr/local/bin/fleetguard-agent -run -runtime-config /etc/fleetguard/agent-runtime.json
+ExecStopPost=/usr/local/bin/fleetguardctl cleanup-owned -runtime-config /etc/fleetguard/agent-runtime.json
+WatchdogSec=60
+TimeoutStartSec=60
+TimeoutStopSec=30
 Restart=always
 RestartSec=1
 # systemd >= 254: auto-restarts skip the failed state, so OnFailure fires only

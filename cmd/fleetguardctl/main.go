@@ -28,7 +28,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: fleetguardctl version | check-config -kind agent|controller -config FILE | simulate [-a FILE] [-b FILE] [-at RFC3339] | check-safety -config FILE | status|decisions|inspect [IP] -runtime-config FILE | emergency-disable [-state-dir DIR] [-runtime-config FILE] | audit-exposure -config FILE (-observed FILE|-live) [-watch] [-interval 5s] [-grace 2s] | hash-token (stdin) | generate-signing-key -private FILE -public FILE")
+	fmt.Fprintln(os.Stderr, "usage: fleetguardctl version | check-config -kind agent|controller -config FILE | simulate [-a FILE] [-b FILE] [-at RFC3339] | check-safety -config FILE | status|decisions|inspect [IP] -runtime-config FILE | emergency-disable [-state-dir DIR] [-runtime-config FILE] | cleanup-owned -runtime-config FILE | audit-exposure -config FILE (-observed FILE|-live) [-watch] [-interval 5s] [-grace 2s] | hash-token (stdin) | generate-signing-key -private FILE -public FILE")
 }
 
 func main() {
@@ -209,6 +209,23 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println("emergency disabled; confirmed owned runtime IP-set entries and scoped rich rules removed")
+	case "cleanup-owned":
+		// Independent of the agent process: for systemd ExecStopPost= so a
+		// watchdog-killed or crashed agent never leaves owned bans behind.
+		flags := flag.NewFlagSet("cleanup-owned", flag.ExitOnError)
+		configured := flags.String("runtime-config", "", "installed agent runtime config")
+		flags.Parse(os.Args[2:])
+		if flags.NArg() != 0 || *configured == "" {
+			usage()
+			os.Exit(2)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if err := agent.CleanupOwned(ctx, *configured); err != nil {
+			fmt.Fprintln(os.Stderr, "cleanup-owned:", err)
+			os.Exit(1)
+		}
+		fmt.Println("owned runtime firewall entries removed (or nothing to remove in observe mode)")
 	case "hash-token":
 		if len(os.Args) != 2 {
 			usage()

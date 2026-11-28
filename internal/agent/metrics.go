@@ -19,6 +19,8 @@ type Collector struct {
 	engine *Engine
 	sensor *firewalldsensor.Collector // nil when denied-traffic telemetry is off
 	now    func() time.Time
+	// watchdog is nil when systemd WatchdogSec is not configured.
+	watchdog *watchdog
 }
 
 func NewCollector(c RuntimeConfig, e *Engine, s *firewalldsensor.Collector) *Collector {
@@ -51,6 +53,9 @@ var (
 	descSensorEmitted  = desc("sensor_reports_emitted_total", "Denied-traffic evidence reports emitted.")
 	descSensorJournal  = desc("sensor_journal_failures_total", "Journal reader failures.")
 	descSensorSources  = desc("sensor_active_sources", "Sources tracked in the current window.")
+
+	descWatchdog     = desc("watchdog_enabled", "1 if systemd WatchdogSec supervises this agent (pings only after successful reconcile).")
+	descWatchdogPing = desc("watchdog_last_ping_timestamp_seconds", "UNIX time of the last WATCHDOG=1 sent after a successful reconcile.")
 
 	// Fleet never-ban protection; emitted only when a protection anchor is configured.
 	descProtRequired  = desc("protection_required", "1 if new bans require a fresh fleet never-ban list.")
@@ -114,6 +119,8 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	gauge(descLastError, b(st.LastError != ""))
 	counter(descReconcileErrs, st.ReconcileErrors)
 	ts(descLastReconcile, st.LastReconcile)
+	gauge(descWatchdog, b(c.watchdog != nil))
+	ts(descWatchdogPing, c.watchdog.lastPingTime())
 
 	if c.cfg.NeverBanKeysFile != "" {
 		fresh := st.ProtectionRevision > 0 && !st.ProtectionUnverified && st.ProtectionExpiresAt.After(now)

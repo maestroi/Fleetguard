@@ -15,7 +15,11 @@ Verify against `git log origin/main`, `gh pr list`, `gh issue list` and
 - The automated commit security review found a fail-open: a retained,
   unverified list (after signer rotation) was still treated as fresh. Fixed
   with a regression test (`147b789`).
-- Created #47, the watchdog and independent TTL recovery issue (P0).
+- Created #47, the watchdog and independent TTL recovery issue (P0), and
+  implemented it in draft PR #49. That covers bounded D-Bus calls, a watchdog
+  pinged only after a successful reconcile, ExecStopPost `cleanup-owned`, and
+  research showing firewalld timeout ipsets can't be used (entries are
+  untracked and not removable).
 - Added these persistent docs.
 
 ## Working-tree notes
@@ -60,7 +64,9 @@ Verify against `git log origin/main`, `gh pr list`, `gh issue list` and
 
 ## Next steps (in order)
 
-1. **#47 watchdog.** Real hung-agent risk; G5 is unmet. Plan:
+1. **#47 watchdog**: DONE in draft PR #49. The owner must review it (it changes
+   unit semantics) and run `scripts/lab/watchdog-fault-injection.sh` on a
+   disposable VM. Original plan, for reference: Real hung-agent risk; G5 is unmet. Plan:
    - systemd notify plus `WatchdogSec`, pinged only after a successful reconcile
    - per-call D-Bus deadlines in `internal/firewall/firewalld`
    - a `fleetguard-agent cleanup` oneshot via `OnFailure=` and `ExecStopPost=`

@@ -10,7 +10,7 @@ gate below is satisfied **with recorded evidence** (test name, lab log or PR).
 | G2 Observe-only default; remote config cannot elevate to enforce/strict | all | rootless unit | config validation tests; enforce needs root-owned config + lab ack |
 | G3 Signed, bounded policies: signature, signer, audience, group, node, revision, expiry, skew, scope, size, count | snapshots, never-ban | rootless unit + fuzz (never-ban) | `pkg/protocol` tests |
 | G4 Replay/rollback safe across restarts | snapshots, never-ban | rootless unit | persisted watermark tests |
-| G5 Independent expiry: bans lapse with controller down, agent crashed, **hung**, firewalld reload, restart, key change | enforcement | **NOT MET** for hung agent | #47 |
+| G5 Independent expiry: bans lapse with controller down, agent crashed, **hung**, firewalld reload, restart, key change | enforcement | **NOT MET**: mechanism in draft #49 (watchdog + ExecStopPost cleanup), lab run pending | #47, docs/watchdog.md |
 | G6 Spoofable evidence never auto-blocks legitimate traffic | correlation, local responder | design + unit | `AddLocal` proof-level gate; correlation observe-only |
 | G7 Firewall ownership: only Fleetguard objects touched | firewalld backend | rootless unit | lab confirmation pending (#11) |
 | G8 Unsupported packet paths reported, never claimed (Docker FORWARD, IPv6, Tailscale) | enforcement, strict | **NOT MET** | #12 |

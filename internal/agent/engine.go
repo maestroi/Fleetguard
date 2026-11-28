@@ -51,6 +51,10 @@ type EngineOptions struct {
 	NeverBanKeys     map[string]ed25519.PublicKey
 	NeverBanRequired bool
 	ProtectionStore  ProtectionStore
+	// ReconcileTimeout bounds every backend (D-Bus) interaction so a wedged
+	// firewalld cannot hold the engine forever. Default 15s; must stay well
+	// below systemd WatchdogSec.
+	ReconcileTimeout time.Duration
 }
 type Status struct {
 	Mode                string    `json:"mode"`
@@ -88,7 +92,10 @@ type Status struct {
 	ProtectionCleanupFailures uint64    `json:"protection_cleanup_failures"`
 }
 
-const DefaultMaxOfflineAge = 5 * time.Minute
+const (
+	DefaultMaxOfflineAge    = 5 * time.Minute
+	DefaultReconcileTimeout = 15 * time.Second
+)
 
 func NewEngine(o EngineOptions) (*Engine, error) {
 	if o.Now == nil {
@@ -105,6 +112,12 @@ func NewEngine(o EngineOptions) (*Engine, error) {
 	}
 	if o.MaxOfflineAge == 0 {
 		o.MaxOfflineAge = DefaultMaxOfflineAge
+	}
+	if o.ReconcileTimeout == 0 {
+		o.ReconcileTimeout = DefaultReconcileTimeout
+	}
+	if o.ReconcileTimeout < 100*time.Millisecond || o.ReconcileTimeout > time.Minute {
+		return nil, errors.New("agent: reconcile timeout must be 100ms-60s")
 	}
 	if o.MaxOfflineAge < time.Second || o.MaxOfflineAge > protocol.MaxSnapshotTTL {
 		return nil, errors.New("agent: offline age must be 1-300 seconds")
@@ -252,7 +265,9 @@ func (e *Engine) Accept(ctx context.Context, envelope protocol.SignedSnapshot) (
 			e.setError(err)
 			return ack(e.options, signed.Revision, protocol.StateRejected, protocol.ReasonScopeMismatch), err
 		}
-		capabilities, err := e.options.Backend.Capabilities(ctx)
+		capCtx, cancel := context.WithTimeout(ctx, e.options.ReconcileTimeout)
+		capabilities, err := e.options.Backend.Capabilities(capCtx)
+		cancel()
 		if err != nil {
 			e.setError(err)
 			return ack(e.options, signed.Revision, protocol.StateError, protocol.ReasonInvalidDecision), err
@@ -313,6 +328,8 @@ func (e *Engine) Tick(ctx context.Context) error {
 	return err
 }
 func (e *Engine) reconcile(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, e.options.ReconcileTimeout)
+	defer cancel()
 	if err := ctx.Err(); err != nil {
 		e.setError(err)
 		return err

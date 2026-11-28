@@ -3,7 +3,7 @@ module github.com/maestroi/Fleetguard
 go 1.27.0
 
 require (
-	github.com/godbus/dbus/v5 v5.2.2
+	github.com/godbus/dbus/v5 v5.2.4
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/common v0.66.1
 )

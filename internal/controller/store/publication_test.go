@@ -28,10 +28,10 @@ func TestApprovedDecisionReplacesCachedSnapshotsUntilExpiry(t *testing.T) {
 	}
 	d := protocol.Decision{ID: "approved", Source: "172.29.50.13/32", Action: protocol.ActionDrop, Service: "ssh", Transport: "tcp", DestinationPorts: []uint16{22}, ExpiresAt: now.Add(time.Minute), ReasonCode: "verified_multi_node_abuse"}
 	nodes := []string{"agent-a", "agent-b"}
-	if err := db.PublishApprovedDecision(group, nodes, d, signer, key, now); err != nil {
+	if err := db.PublishApprovedDecision(group, nodes, d, signer, key, nil, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.PublishApprovedDecision(group, []string{"agent-c", "agent-a"}, d, signer, key, now); err == nil {
+	if err := db.PublishApprovedDecision(group, []string{"agent-c", "agent-a"}, d, signer, key, nil, now); err == nil {
 		t.Fatal("second approval replaced an active decision")
 	}
 	wire, revision, err := db.Snapshot("agent-c", group, signer, key, now)
@@ -62,5 +62,40 @@ func TestApprovedDecisionReplacesCachedSnapshotsUntilExpiry(t *testing.T) {
 		if err != nil || len(snap.Decisions) != 0 || next != rev+1 {
 			t.Fatalf("%s: expired snapshot = %+v, err = %v", node, snap, err)
 		}
+	}
+}
+
+// Every publication path consults fleet protection inside its transaction.
+func TestApprovedDecisionRespectsFleetNeverBan(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "private", "lab.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, key, _ := ed25519.GenerateKey(nil)
+	fleetPub, fleetKey, _ := ed25519.GenerateKey(nil)
+	keys := map[string]ed25519.PublicKey{"fleet": fleetPub}
+	now := time.Now().UTC()
+	decision := func(id, src string) protocol.Decision {
+		return protocol.Decision{ID: id, Source: src, Action: protocol.ActionDrop, Service: "ssh", Transport: "tcp", DestinationPorts: []uint16{22}, ExpiresAt: now.Add(time.Minute), ReasonCode: "verified_multi_node_abuse"}
+	}
+	nodes := []string{"agent-a", "agent-b"}
+	if err := db.PublishApprovedDecision("g", nodes, decision("d1", "172.29.50.13/32"), "k", key, keys, now); err == nil {
+		t.Fatal("published with protection configured but missing")
+	}
+	if _, err := db.UpdateNeverBan([]protocol.Protection{{CIDR: "172.29.50.0/24", Category: protocol.ProtectionPeers}}, false, "uid:1", "peer", "fleet", fleetKey, now, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.PublishApprovedDecision("g", nodes, decision("d1", "172.29.50.13/32"), "k", key, keys, now); protocol.Reason(err) != protocol.ReasonProtectedSource {
+		t.Fatalf("protected source published: %v", err)
+	}
+	if err := db.PublishApprovedDecision("g", nodes, decision("d2", "172.29.51.13/32"), "k", key, nil, now); err == nil {
+		t.Fatal("published while history exists but anchor is not configured")
+	}
+	if err := db.PublishApprovedDecision("g", nodes, decision("d3", "172.29.51.13/32"), "k", key, keys, now); err != nil {
+		t.Fatalf("unprotected source refused: %v", err)
+	}
+	if err := db.PublishApprovedDecision("g", []string{"agent-c", "agent-d"}, decision("d4", "172.29.52.13/32"), "k", key, keys, now.Add(2*time.Hour)); err == nil {
+		t.Fatal("published with expired protection")
 	}
 }

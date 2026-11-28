@@ -71,3 +71,16 @@ func (s *Server) neverBan(w http.ResponseWriter, r *http.Request) {
 	}
 	jsonResult(w, http.StatusOK, revision.Envelope)
 }
+
+// neverBanStatus reads the latest verified revision for metrics. Scrapes are
+// infrequent; each costs one SQLite read and one signature verification.
+func (s *Server) neverBanStatus() (uint64, float64) {
+	if len(s.neverBanKeys) == 0 {
+		return 0, 0
+	}
+	rev, err := s.db.ReadNeverBanRevision(0, s.neverBanKeys)
+	if err != nil {
+		return 0, 0
+	}
+	return rev.List.Revision, float64(rev.List.ExpiresAt.Unix())
+}

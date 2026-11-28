@@ -16,7 +16,9 @@ import (
 
 // PublishApprovedDecision replaces the reporting nodes' cached snapshots in
 // one transaction. Both the decision and its signed snapshot expire together.
-func (s *DB) PublishApprovedDecision(group string, nodes []string, decision protocol.Decision, keyID string, key ed25519.PrivateKey, now time.Time) error {
+// neverBanKeys is the fleet-protection anchor (nil when not configured); the
+// protection check runs inside the publishing transaction.
+func (s *DB) PublishApprovedDecision(group string, nodes []string, decision protocol.Decision, keyID string, key ed25519.PrivateKey, neverBanKeys map[string]ed25519.PublicKey, now time.Time) error {
 	source, err := netip.ParsePrefix(decision.Source)
 	if err != nil || !source.Addr().IsPrivate() || len(nodes) < 2 || len(decision.DestinationPorts) != 1 ||
 		decision.ExpiresAt.Sub(now) > 2*time.Minute || len(key) != ed25519.PrivateKeySize {
@@ -25,6 +27,9 @@ func (s *DB) PublishApprovedDecision(group string, nodes []string, decision prot
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.transaction(func() error {
+		if err := s.checkNeverBan(source, neverBanKeys, now); err != nil {
+			return err
+		}
 		seen := make(map[string]bool, len(nodes))
 		for _, node := range nodes {
 			if node == "" || seen[node] {

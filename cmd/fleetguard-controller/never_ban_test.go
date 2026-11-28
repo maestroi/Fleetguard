@@ -62,6 +62,32 @@ func TestNeverBanCLI(t *testing.T) {
 	if err := run("add", "-private-key", privatePath, "-reason", "partner inventory", "-category", "partners", "-cidr", "198.51.100.1/32"); err != nil {
 		t.Fatal(err)
 	}
+	// Bulk dry-run: reports duplicates, existing and invalid entries, writes nothing.
+	bulk := write("bulk.txt", []byte("# incident peers\n203.0.113.0/24\n203.0.113.0/24\n198.51.100.1/32\n203.0.113.7/24\n"))
+	if err := run("add", "-dry-run", "-reason", "bulk", "-category", "partners", "-file", bulk); err == nil {
+		t.Fatal("dry-run with an invalid entry must exit non-zero")
+	}
+	var report struct {
+		CurrentRevision  uint64                `json:"current_revision"`
+		New              []protocol.Protection `json:"new"`
+		DuplicateRequest int                   `json:"duplicate_in_request"`
+		AlreadyProtected int                   `json:"already_protected"`
+		Invalid          map[string]string     `json:"invalid"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &report); err != nil || report.CurrentRevision != 2 || len(report.New) != 1 ||
+		report.DuplicateRequest != 1 || report.AlreadyProtected != 1 || report.Invalid["203.0.113.7/24"] == "" {
+		t.Fatalf("dry-run report %+v %v", report, err)
+	}
+	if err := run("add", "-private-key", privatePath, "-reason", "bulk", "-category", "partners", "-file", bulk); err == nil {
+		t.Fatal("bulk add with non-canonical CIDR accepted")
+	}
+	clean := write("clean.txt", []byte("203.0.113.0/24\n2001:db8::/48\n"))
+	if err := run("add", "-private-key", privatePath, "-reason", "bulk", "-category", "edge", "-file", clean); err != nil {
+		t.Fatal(err)
+	}
+	if err := run("add", "-dry-run", "-reason", "again", "-category", "edge", "-file", clean); err == nil {
+		t.Fatal("dry-run of an already applied list should report refusal")
+	}
 	// Read-only commands do not require access to either private key.
 	if err := os.Remove(privatePath); err != nil {
 		t.Fatal(err)
@@ -87,7 +113,7 @@ func TestNeverBanCLI(t *testing.T) {
 		To    uint64                `json:"to_revision"`
 		Added []protocol.Protection `json:"added"`
 	}
-	if err := json.Unmarshal(out.Bytes(), &diff); err != nil || diff.From != 1 || diff.To != 2 || len(diff.Added) != 1 || diff.Added[0].CIDR != "198.51.100.1/32" {
+	if err := json.Unmarshal(out.Bytes(), &diff); err != nil || diff.From != 1 || diff.To != 3 || len(diff.Added) != 3 {
 		t.Fatal(diff, err)
 	}
 	if err := run("list", "-private-key", privatePath); err == nil {

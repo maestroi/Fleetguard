@@ -98,6 +98,17 @@ func New(r auth.Registry, db *store.DB, keyID string, key ed25519.PrivateKey, cl
 			}
 			return float64(n)
 		}),
+		// Compare with fleetguard_agent_protection_revision to alert on mismatch.
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "fleetguard_controller_never_ban_revision",
+			Help: "Latest verified fleet never-ban revision (0 = disabled, missing or unverifiable)."}, func() float64 {
+			rev, _ := s.neverBanStatus()
+			return float64(rev)
+		}),
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "fleetguard_controller_never_ban_expires_timestamp_seconds",
+			Help: "UNIX expiry of the latest verified fleet never-ban revision (0 = none)."}, func() float64 {
+			_, expires := s.neverBanStatus()
+			return expires
+		}),
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "fleetguard_controller_enforcement_enabled",
 			Help: "Always 0: the controller does not enforce policies."}, func() float64 { return 0 }),
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "fleetguard_controller_info",

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -157,6 +158,10 @@ func (s *DB) UpdateNeverBan(additions []protocol.Protection, renew bool, actor, 
 		if err != nil {
 			return err
 		}
+		detail := fmt.Sprintf("revision=%d entries=%d added=%d renew=%t", next.Revision, len(next.Entries), len(next.Entries)-len(prior.List.Entries), renew)
+		if _, err = s.exec("INSERT INTO audit(received_at,kind,node_id,detail) VALUES(?,?,?,?)", instant(now), "never_ban_updated", actor, detail); err != nil {
+			return err
+		}
 		result = NeverBanRevision{List: next, Envelope: wire, Actor: actor, Reason: reason}
 		return nil
 	})
@@ -183,4 +188,34 @@ func NeverBanDiff(previous, current protocol.NeverBanList) ([]protocol.Protectio
 		}
 	}
 	return added, nil
+}
+
+// CheckNeverBan rejects a proposed ban source that overlaps the latest fleet
+// protection, failing closed when protection is configured but missing,
+// expired or unverifiable, or when history exists without a trust anchor.
+// It is an additional controller gate; agents still check independently.
+func (s *DB) CheckNeverBan(source netip.Prefix, keys map[string]ed25519.PublicKey, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.checkNeverBan(source, keys, now)
+}
+
+// checkNeverBan requires the caller to hold the DB mutex (and, when
+// publishing, to be inside the same transaction to avoid check/use races).
+func (s *DB) checkNeverBan(source netip.Prefix, keys map[string]ed25519.PublicKey, now time.Time) error {
+	if len(keys) == 0 {
+		_, found, err := s.row("SELECT revision FROM never_ban_revisions LIMIT 1")
+		if err != nil {
+			return err
+		}
+		if found {
+			return errors.New("fleet never-ban history exists but no protection trust anchor is configured")
+		}
+		return nil
+	}
+	rev, err := s.readNeverBanRevision(0, keys)
+	if err != nil {
+		return fmt.Errorf("fleet never-ban unavailable: %w", err)
+	}
+	return protocol.CheckNeverBanSource(rev.List, source, now)
 }

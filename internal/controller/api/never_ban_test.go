@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/tls"
-	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"

@@ -37,7 +37,7 @@ func TestNeverBanCLI(t *testing.T) {
 	config := map[string]string{
 		"mode": "observe", "listen": "127.0.0.1:9443",
 		"tls_cert_file": "unused", "tls_key_file": "unused", "registry_file": "unused",
-		"database_file": filepath.Join(dir, "private", "controller.sqlite"),
+		"database_file":    filepath.Join(dir, "private", "controller.sqlite"),
 		"signing_key_file": policyPath, "signing_key_id": "policy",
 	}
 	raw, err := json.Marshal(config)

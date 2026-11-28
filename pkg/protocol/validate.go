@@ -214,11 +214,15 @@ func ValidateAcknowledgement(a Acknowledgement) error {
 	if a.Schema != SchemaVersion || !validID(a.NodeID) || a.Revision == 0 {
 		return fail(ReasonInvalidSchema, "invalid ack schema, node or revision")
 	}
-	if !slices.Contains([]DecisionState{StateReceived, StateValidated, StateApplied, StateRejected, StateError}, a.State) {
+	if !slices.Contains([]DecisionState{StateReceived, StateValidated, StateApplied, StateRejected, StateError, StatePartial}, a.State) {
 		return fail(ReasonInvalidDecision, "unknown acknowledgement state")
 	}
-	if a.State == StateRejected || a.State == StateError {
-		if !slices.Contains([]ReasonCode{ReasonMalformed, ReasonOversized, ReasonInvalidSchema, ReasonInvalidEvidence, ReasonInvalidDecision, ReasonUnknownSigner, ReasonInvalidSignature, ReasonNotCanonical, ReasonExpired, ReasonClockSkew, ReasonReplay, ReasonScopeMismatch}, a.Reason) {
+	if a.State == StatePartial {
+		if a.Reason != ReasonProtectedSource {
+			return fail(ReasonInvalidDecision, "partial acknowledgement must name protected_source")
+		}
+	} else if a.State == StateRejected || a.State == StateError {
+		if !slices.Contains([]ReasonCode{ReasonMalformed, ReasonOversized, ReasonInvalidSchema, ReasonInvalidEvidence, ReasonInvalidDecision, ReasonUnknownSigner, ReasonInvalidSignature, ReasonNotCanonical, ReasonExpired, ReasonClockSkew, ReasonReplay, ReasonScopeMismatch, ReasonProtectedSource, ReasonProtectionStale}, a.Reason) {
 			return fail(ReasonInvalidDecision, "rejected or error acknowledgement needs valid reason")
 		}
 	} else if a.Reason != "" {

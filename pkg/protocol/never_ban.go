@@ -74,14 +74,25 @@ func ValidateNeverBanList(list NeverBanList) error {
 	}
 	seen := make(map[Protection]bool, len(list.Entries))
 	for _, entry := range list.Entries {
-		prefix, err := netip.ParsePrefix(entry.CIDR)
-		if err != nil || !prefix.IsValid() || prefix.Addr().Is4In6() || prefix.Bits() == 0 || prefix != prefix.Masked() || prefix.String() != entry.CIDR {
-			return fail(ReasonInvalidDecision, "invalid canonical never-ban CIDR")
+		if err := ValidateProtection(entry); err != nil {
+			return err
 		}
-		if !validProtectionCategory(entry.Category) || seen[entry] {
-			return fail(ReasonInvalidDecision, "unknown category or duplicate protection")
+		if seen[entry] {
+			return fail(ReasonInvalidDecision, "duplicate protection")
 		}
 		seen[entry] = true
+	}
+	return nil
+}
+
+// ValidateProtection checks one entry: canonical non-/0 CIDR, known category.
+func ValidateProtection(entry Protection) error {
+	prefix, err := netip.ParsePrefix(entry.CIDR)
+	if err != nil || !prefix.IsValid() || prefix.Addr().Is4In6() || prefix.Bits() == 0 || prefix != prefix.Masked() || prefix.String() != entry.CIDR {
+		return fail(ReasonInvalidDecision, "invalid canonical never-ban CIDR")
+	}
+	if !validProtectionCategory(entry.Category) {
+		return fail(ReasonInvalidDecision, "unknown protection category")
 	}
 	return nil
 }
@@ -240,11 +251,24 @@ func CheckNeverBanSource(list NeverBanList, source netip.Prefix, now time.Time) 
 	if !source.IsValid() || source.Addr().Is4In6() || source != source.Masked() || source.Bits() == 0 {
 		return fail(ReasonInvalidDecision, "invalid ban source prefix")
 	}
-	for _, entry := range list.Entries {
-		protected, _ := netip.ParsePrefix(entry.CIDR)
-		if source.Overlaps(protected) {
-			return fail(ReasonScopeMismatch, "protected_source: source overlaps fleet protection")
-		}
+	if NeverBanIndex(list).Overlaps(source) {
+		return fail(ReasonProtectedSource, "source overlaps fleet protection")
 	}
 	return nil
+}
+
+// DecodeNeverBanUnverified structurally decodes a previously accepted list
+// from root-owned durable state WITHOUT checking its signature. Use it only to
+// retain protections after a signer rotation: protections can only withhold
+// bans, so a retained list never grants anything. Never use it for updates.
+func DecodeNeverBanUnverified(envelope SignedNeverBanList) (NeverBanList, error) {
+	payload, err := base64Codec.DecodeString(envelope.PayloadBase64)
+	if err != nil || len(payload) > MaxNeverBanBytes {
+		return NeverBanList{}, fail(ReasonMalformed, "invalid never-ban payload encoding")
+	}
+	var list NeverBanList
+	if err := decodeJSON(payload, MaxNeverBanBytes, &list); err != nil {
+		return NeverBanList{}, err
+	}
+	return list, ValidateNeverBanList(list)
 }

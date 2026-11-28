@@ -111,7 +111,7 @@ func TestNeverBanAddOnlyEvenAfterExpiry(t *testing.T) {
 func TestNeverBanOverlapAndStaleGate(t *testing.T) {
 	list, now := neverBanFixture()
 	for _, source := range []string{"192.0.2.42/32", "192.0.0.0/16", "2001:db8::1/128", "2001:db8::/32"} {
-		if err := CheckNeverBanSource(list, netip.MustParsePrefix(source), now); Reason(err) != ReasonScopeMismatch {
+		if err := CheckNeverBanSource(list, netip.MustParsePrefix(source), now); Reason(err) != ReasonProtectedSource {
 			t.Errorf("overlap %s not rejected: %v", source, err)
 		}
 	}

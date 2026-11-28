@@ -116,7 +116,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	ts(descLastReconcile, st.LastReconcile)
 
 	if c.cfg.NeverBanKeysFile != "" {
-		fresh := st.ProtectionRevision > 0 && st.ProtectionExpiresAt.After(now)
+		fresh := st.ProtectionRevision > 0 && !st.ProtectionUnverified && st.ProtectionExpiresAt.After(now)
 		gauge(descProtRequired, b(c.cfg.NeverBanRequired))
 		gauge(descProtRevision, float64(st.ProtectionRevision))
 		gauge(descProtEntries, float64(st.ProtectionEntries))

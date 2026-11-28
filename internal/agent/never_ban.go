@@ -176,7 +176,9 @@ func (e *Engine) AcceptNeverBan(ctx context.Context, envelope protocol.SignedNev
 	if len(e.options.NeverBanKeys) == 0 {
 		return errors.New("never-ban trust not configured")
 	}
-	if e.protSigned != nil && *e.protSigned == envelope {
+	// Idempotent only for a list verified under the CURRENT anchor; a
+	// retained unverified list must re-verify (and fail) like any update.
+	if e.protSigned != nil && *e.protSigned == envelope && !e.status.ProtectionUnverified {
 		return nil
 	}
 	now := e.options.Now()
@@ -201,8 +203,10 @@ func (e *Engine) AcceptNeverBan(ctx context.Context, envelope protocol.SignedNev
 	return nil
 }
 
+// protectionFresh requires a list verified under the current anchor; retained
+// unverified entries still withhold bans but never authorize new ones.
 func (e *Engine) protectionFresh(now time.Time) bool {
-	return e.prot.Revision > 0 && e.prot.ExpiresAt.After(now) && !e.prot.IssuedAt.After(now.Add(protocol.MaxClockSkew))
+	return e.prot.Revision > 0 && !e.status.ProtectionUnverified && e.prot.ExpiresAt.After(now) && !e.prot.IssuedAt.After(now.Add(protocol.MaxClockSkew))
 }
 
 // protectionAllowsExisting reports whether already accepted bans may keep

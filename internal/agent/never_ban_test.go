@@ -298,6 +298,14 @@ func TestNeverBanSurvivesRestartAndSignerRotation(t *testing.T) {
 	if st.ProtectionRevision != 4 || !st.ProtectionUnverified || st.ProtectionEntries != 1 {
 		t.Fatalf("rotation dropped protections: %+v", st)
 	}
+	// Unexpired but unverifiable: not fresh, so new bans are refused.
+	if ack, _ := env.e.Accept(ctx, multiSnapshot(t, env.priv, *env.now, 1, "203.0.113.5/32")); ack.Reason != protocol.ReasonProtectionStale {
+		t.Fatalf("retained unverified list authorized a new ban: %+v", ack)
+	}
+	// Re-serving the old envelope must not be taken as an idempotent success.
+	if err := env.e.AcceptNeverBan(ctx, *env.prot.state.Signed); err == nil {
+		t.Fatal("old-signer envelope accepted as idempotent after rotation")
+	}
 	// The new signer may not roll back revision or drop retained entries.
 	if err := env.e.AcceptNeverBan(ctx, signList(t, rotated, "fleet-2", 5, *env.now, "198.51.100.0/24")); err == nil {
 		t.Fatal("rotated signer removed retained protection")

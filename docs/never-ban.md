@@ -1,8 +1,9 @@
 # Fleet-wide never-ban protection: protocol foundation (#41)
 
-The signed protocol and local controller management are implemented. They do
-now include an opt-in read-only distribution endpoint. They do **not** change
-agent, firewall or lab approval behavior.
+The signed protocol, controller management, authenticated distribution, agent
+retrieval/persistence/enforcement and the controller publication gate are
+implemented. Everything is opt-in; agents without a never-ban anchor behave
+as before.
 
 ## Contract
 
@@ -28,24 +29,98 @@ retirement of protections. The protection list should use an independently
 provisioned signing trust anchor rather than treating every ban signer as a
 protection signer.
 
-## Remaining integration gates
+## Agent integration
 
-- Agent atomic persistent revision and signed state, separate trust configuration,
-  idempotent polling, expiry and fail-safe behavior after restart.
-- Before activating a new list, remove conflicting existing temporary bans and
-  recheck both central and local decision paths. Retain last known protections
-  even when expired; block new bans until a fresh list is validated. Never silently
-  fall back to local-only protection in an enforcement configuration requiring
-  fleet protection.
-- Controller-side overlap checks for every publication path, including the lab
-  path, and per-entry decisions for future bulk bans.
-- Bounded metrics and audit, including revision and rejection categories.
-- Negative and real disposable-VM tests; no production rollout before #11/#12
-  safety gates and watchdog gap are addressed.
+Opt in with two runtime config fields:
 
-The protocol package tests cover signing, canonical order, domain separation,
-tampering, revision replay, expiry, future issuance, additive transitions after
-expiry, IPv4/IPv6 overlap and malformed input.
+```json
+{
+  "never_ban_trusted_keys_file": "/etc/fleetguard/never-ban-keys.json",
+  "never_ban_required": true
+}
+```
+
+The keys file has the same format as `trusted_keys_file` but must be a
+different file, and no key ID or key material may be shared with the policy
+signers (checked at startup). In enforce mode it must be root-owned.
+
+**Retrieval.** Each poll first fetches `GET /v1/never-ban` (no query; same
+pinned-TLS transport and per-node token), then the snapshot. The agent
+verifies the signature against its own anchor regardless of HTTPS. An ETag is
+sent only after the matching document was verified and persisted, so a 304
+can never stand in for an unverified document. A protection fetch failure
+never blocks the snapshot poll: unbans and expiry keep flowing.
+
+**Persistence.** The accepted envelope, revision and acceptance time are
+written to `<state_dir>/never-ban-v1.json` with the same atomic
+temp+fsync+rename, 0600, no-symlink, single-link and root-owner checks as the
+policy state. Identical repeats are idempotent (no rewrite). Replays, older
+revisions, removals, expired, forged or policy-signed lists are rejected and
+leave prior protections untouched. On restart the list is re-verified at its
+acceptance time; if the anchor was rotated away, the entries are **retained**
+(they can only withhold bans) but reported `protection_unverified` and never
+counted as fresh. A rotated signer can only add to the retained entries.
+
+**Merging.** Root-owned local protections (protected CIDRs, controller IPs,
+management interfaces; see local-safety.md) are checked as before. Fleet
+entries are indexed (`protocol.ProtectionIndex`: a set lookup per distinct
+prefix length plus one binary search; about 45 ns per lookup at 4,096 entries
+on the development machine) and checked on every reconcile. Remote lists
+can only add protection.
+
+**Partial enforcement.** A valid snapshot whose decisions partly overlap fleet
+protections is accepted; the overlapping decisions are withheld individually,
+the rest are applied, and the ack is `partially_applied` with reason
+`protected_source`, never `applied`. (Local safety violations still reject
+the whole snapshot; per-entry local rejection is part of #44.)
+
+**Active ban removal.** Accepting a list triggers an immediate reconcile.
+Decisions overlapping a protection are dropped from desired state (locals are
+deleted outright), the backend is reconciled, and the backend readback is
+checked: a protected source still reported installed increments
+`protection_cleanup_failures_total` and fails the reconcile. Because
+protection is add-only and filtering runs on every reconcile, a removed ban
+cannot be restored by the same or a later snapshot.
+
+**Offline / stale behavior** (`never_ban_required: true`):
+
+| Situation | New central/local bans | Existing bans |
+| --- | --- | --- |
+| Fresh list | accepted (minus protected entries) | kept |
+| Never received a list | refused (`protection_stale`) | none can exist |
+| List expired (controller down, not renewed) | refused; snapshots that only repeat or remove existing decisions are still accepted | kept until list expiry + `max_offline_age`, then all lapse |
+| Retained after signer rotation | refused until a fresh list from a trusted signer | same as expired |
+
+Protections are retained in all cases. With `never_ban_required: false` the
+fleet list still withholds overlapping bans when present, but its absence does
+not block bans; this is explicit local-only operation, never a silent fallback.
+
+**Controller.** `PublishApprovedDecision`, the only current publication path,
+checks the fleet list inside its SQLite transaction. It fails closed when the
+anchor is configured but the list is missing, expired or unverifiable, or when
+history exists without a configured anchor. Refusals are audited as
+`decision_refused`. Every never-ban write also adds a `never_ban_updated`
+audit row. Future paths (#44 manual bans, automation, feeds) must call
+`DB.CheckNeverBan` in the same way.
+
+**Metrics** (bounded labels only, no addresses). Agent:
+`fleetguard_agent_protection_{required,revision,entries,fresh,unverified,withheld_decisions}`,
+`..._protection_expires_timestamp_seconds`, `..._protection_last_update_timestamp_seconds`,
+`..._protection_updates_total{result}`, `..._decisions_rejected_total{reason=protected_source|protection_stale}`,
+`..._protection_conflict_removals_total`, `..._protection_cleanup_failures_total`.
+Controller: `fleetguard_controller_never_ban_revision` and
+`..._never_ban_expires_timestamp_seconds`. Alerts in
+`deploy/monitoring/alerts.yml` cover stale lists, upcoming expiry, revision
+mismatch, cleanup failure and rejected updates.
+
+### Remaining gates
+
+- Disposable-VM validation of removal of a real firewalld IP-set entry on
+  protection update (rootless tests use a fake backend). Tracked with #11/#12.
+- The watchdog gap (a hung agent cannot remove bans) is unaffected by this
+  feature; see the watchdog issue.
+- Signer rotation on the controller side (overlapping anchors) is not
+  implemented; the agent tolerates it by retaining entries.
 
 ## Local controller management
 
@@ -60,10 +135,19 @@ fleetguard-controller never-ban list -config /private/server.json \
   -key-id fleet-protection -public-key /private/fleet.pub
 fleetguard-controller never-ban diff -config /private/server.json \
   -key-id fleet-protection -public-key /private/fleet.pub -from 1
+# Bulk import (one canonical CIDR per line, # comments), validated first:
+fleetguard-controller never-ban add -dry-run -config /private/server.json \
+  -key-id fleet-protection -public-key /private/fleet.pub \
+  -category partners -file partners.txt -reason 'partner import'
+fleetguard-controller never-ban add -config /private/server.json \
+  -key-id fleet-protection -public-key /private/fleet.pub -private-key /private/fleet.key \
+  -category partners -file partners.txt -reason 'partner import'
 fleetguard-controller never-ban renew -config /private/server.json \
   -key-id fleet-protection -public-key /private/fleet.pub -private-key /private/fleet.key \
   -reason 'scheduled refresh'
 ```
+
+`-dry-run` needs no private key, opens the database read-only and reports new, duplicate-in-request, already-protected and invalid entries plus the resulting count; it exits non-zero if the real add would be refused, so it can gate automation.
 
 Each write uses BEGIN IMMEDIATE and appends a complete verified signed revision,
 the local process UID, issuance timestamp and reason to the private controller
@@ -114,4 +198,4 @@ Authentication/revocation applies even to conditional requests.
 Each request reads and verifies the current durable revision (no stale fallback
 or in-memory cache). This avoids sending a superseded revision after a committed
 update but still incurs SQLite and signature verification cost; benchmark at
-fleet scale before optimizing. The agent does not yet fetch or enforce this list.
+fleet scale before optimizing.

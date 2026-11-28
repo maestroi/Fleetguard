@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,7 +24,33 @@ type Poller struct {
 	Engine  *Engine
 	Client  PolicyClient
 	pending *protocol.Acknowledgement // bounded to one freshest ack; no unbounded buffering
+	// NeverBan is nil when fleet protection is not configured.
+	NeverBan     NeverBanClient
+	neverBanETag string // set only after the matching document was accepted
 }
+type NeverBanClient interface {
+	FetchNeverBan(ctx context.Context, etag string) (protocol.SignedNeverBanList, string, bool, error)
+}
+
+// pollNeverBan runs before the snapshot so a fresh protection list is in
+// place before new bans are considered. Failure never blocks the snapshot
+// poll: unbans and expiry must keep flowing while protection is unavailable.
+func (p *Poller) pollNeverBan(ctx context.Context) error {
+	if p.NeverBan == nil {
+		return nil
+	}
+	env, etag, notModified, err := p.NeverBan.FetchNeverBan(ctx, p.neverBanETag)
+	if err != nil || notModified {
+		return err
+	}
+	if err := p.Engine.AcceptNeverBan(ctx, env); err != nil {
+		p.neverBanETag = ""
+		return fmt.Errorf("never-ban update: %w", err)
+	}
+	p.neverBanETag = etag
+	return nil
+}
+
 type PolicyClient interface {
 	Fetch(context.Context) (protocol.SignedSnapshot, error)
 	Acknowledge(context.Context, protocol.Acknowledgement) error
@@ -38,6 +65,12 @@ func (p *Poller) PollOnce(ctx context.Context) error {
 			p.pending = nil
 		}
 	}
+	protErr := p.pollNeverBan(ctx)
+	err := p.pollSnapshot(ctx)
+	return errors.Join(protErr, err)
+}
+
+func (p *Poller) pollSnapshot(ctx context.Context) error {
 	env, err := p.Client.Fetch(ctx)
 	if err != nil {
 		return err
@@ -135,6 +168,12 @@ func Run(ctx context.Context, configPath string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	var neverBanKeys map[string]ed25519.PublicKey
+	if c.NeverBanKeysFile != "" {
+		if neverBanKeys, err = LoadKeys(c.NeverBanKeysFile, c.Mode == "enforce"); err != nil {
+			return fmt.Errorf("never-ban trusted keys: %w", err)
+		}
+	}
 	token, err := LoadToken(c.TokenFile, c.Mode == "enforce")
 	if err != nil {
 		return err
@@ -164,6 +203,7 @@ func Run(ctx context.Context, configPath string, out io.Writer) error {
 		Keys:     keys, Policy: policy, Backend: backend, Store: store,
 		Mode: c.Mode, BackendName: c.FirewallBackend, HostINPUTVerified: c.HostINPUTVerified,
 		EmergencyDisabled: emergency, MaxOfflineAge: time.Duration(c.MaxOfflineAgeSeconds) * time.Second, Now: time.Now,
+		NeverBanKeys: neverBanKeys, NeverBanRequired: c.NeverBanRequired, ProtectionStore: protectionStore(store, neverBanKeys),
 	})
 	if err != nil {
 		// If state recovery fails after a crash, do not leave unknown runtime
@@ -178,6 +218,9 @@ func Run(ctx context.Context, configPath string, out io.Writer) error {
 		return err
 	}
 	poller := &Poller{Engine: engine, Client: client}
+	if neverBanKeys != nil {
+		poller.NeverBan = client
+	}
 	var denied *firewalldsensor.Collector
 	if c.DeniedTraffic != nil {
 		denied, err = firewalldsensor.NewCollector(c.NodeID, *c.DeniedTraffic)
@@ -271,4 +314,11 @@ func Run(ctx context.Context, configPath string, out io.Writer) error {
 			poll.Reset(PollDelay(time.Duration(c.PollIntervalSeconds)*time.Second, failures, nil))
 		}
 	}
+}
+
+func protectionStore(fs FileStore, keys map[string]ed25519.PublicKey) ProtectionStore {
+	if keys == nil {
+		return nil
+	}
+	return fs
 }

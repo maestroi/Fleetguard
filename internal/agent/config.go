@@ -50,6 +50,12 @@ type RuntimeConfig struct {
 	// MetricsListen enables a read-only plain-HTTP GET /metrics listener on an
 	// explicit loopback/private/Tailscale IP. Empty (default) disables it.
 	MetricsListen string `json:"metrics_listen,omitempty"`
+	// NeverBanKeysFile is the fleet-protection trust anchor (same format as
+	// trusted_keys_file, but disjoint keys). Empty disables fleet protection.
+	NeverBanKeysFile string `json:"never_ban_trusted_keys_file,omitempty"`
+	// NeverBanRequired refuses new bans while the fleet list is missing or
+	// expired, and lets existing bans lapse after max_offline_age.
+	NeverBanRequired bool `json:"never_ban_required,omitempty"`
 }
 
 func (c RuntimeConfig) Validate() error {
@@ -86,6 +92,12 @@ func (c RuntimeConfig) Validate() error {
 	}
 	if parsed.Port() == "" {
 		return errors.New("controller URL requires explicit port")
+	}
+	if c.NeverBanRequired && c.NeverBanKeysFile == "" {
+		return errors.New("never_ban_required needs never_ban_trusted_keys_file")
+	}
+	if c.NeverBanKeysFile != "" && (!filepath.IsAbs(c.NeverBanKeysFile) || filepath.Clean(c.NeverBanKeysFile) != c.NeverBanKeysFile || c.NeverBanKeysFile == c.TrustedKeysFile) {
+		return errors.New("never_ban_trusted_keys_file must be a separate absolute clean path")
 	}
 	for _, name := range []string{c.TLSCAFile, c.TokenFile, c.TrustedKeysFile, c.SafetyPolicyFile, c.StateDir} {
 		if !filepath.IsAbs(name) || filepath.Clean(name) != name {

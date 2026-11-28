@@ -24,6 +24,11 @@ type Engine struct {
 	snapshot  *protocol.Snapshot
 	local     map[string]protocol.Decision
 	status    Status
+	// Fleet never-ban protection (see never_ban.go).
+	prot       protocol.NeverBanList
+	protSigned *protocol.SignedNeverBanList
+	protIndex  *protocol.ProtectionIndex
+	applied    map[string]bool // decision IDs the backend last reported installed
 }
 type EngineOptions struct {
 	Audience          protocol.Audience
@@ -39,6 +44,11 @@ type EngineOptions struct {
 	Now               func() time.Time
 	// ManagementPrefixLookup overrides only in rootless tests.
 	ManagementPrefixLookup safety.Runtime
+	// NeverBanKeys is the independent fleet-protection trust anchor; it must
+	// share no ID or key with Keys. Empty disables fleet protection.
+	NeverBanKeys     map[string]ed25519.PublicKey
+	NeverBanRequired bool
+	ProtectionStore  ProtectionStore
 }
 type Status struct {
 	Mode                string    `json:"mode"`
@@ -58,6 +68,21 @@ type Status struct {
 	ReconcileErrors     uint64    `json:"reconcile_errors"`
 	CentralDecisions    int       `json:"central_decisions"`
 	Simulated           bool      `json:"simulated"`
+
+	ProtectionRevision        uint64    `json:"protection_revision"`
+	ProtectionEntries         int       `json:"protection_entries"`
+	ProtectionExpiresAt       time.Time `json:"protection_expires_at,omitempty"`
+	ProtectionAcceptedAt      time.Time `json:"protection_accepted_at,omitempty"`
+	ProtectionFresh           bool      `json:"protection_fresh"`
+	ProtectionStale           bool      `json:"protection_stale"` // required but not fresh
+	ProtectionUnverified      bool      `json:"protection_unverified,omitempty"`
+	ProtectedWithheld         int       `json:"protected_withheld"` // central decisions withheld now
+	ProtectionUpdates         uint64    `json:"protection_updates"`
+	InvalidProtection         uint64    `json:"invalid_protection"`
+	RejectedProtectedSource   uint64    `json:"rejected_protected_source"`
+	RejectedProtectionStale   uint64    `json:"rejected_protection_stale"`
+	ProtectionRemovals        uint64    `json:"protection_removals"`
+	ProtectionCleanupFailures uint64    `json:"protection_cleanup_failures"`
 }
 
 const DefaultMaxOfflineAge = 5 * time.Minute
@@ -95,15 +120,21 @@ func NewEngine(o EngineOptions) (*Engine, error) {
 			return nil, fmt.Errorf("invalid trusted key %q", id)
 		}
 	}
+	if err := validateNeverBanOptions(o); err != nil {
+		return nil, err
+	}
 	state, err := o.Store.Load()
 	if err != nil {
 		return nil, fmt.Errorf("load persisted policy: %w", err)
 	}
-	e := &Engine{options: o, persisted: state, local: make(map[string]protocol.Decision), status: Status{Mode: o.Mode, Revision: state.Revision, Simulated: o.Mode == "observe"}}
+	e := &Engine{options: o, persisted: state, local: make(map[string]protocol.Decision), applied: map[string]bool{}, status: Status{Mode: o.Mode, Revision: state.Revision, Simulated: o.Mode == "observe"}}
+	now := o.Now()
+	if err := e.loadProtection(now); err != nil {
+		return nil, err
+	}
 	if state.Revision == 0 {
 		return e, nil
 	}
-	now := o.Now()
 	if state.AcceptedAt.After(now.Add(protocol.MaxClockSkew)) {
 		return nil, errors.New("stored acceptance timestamp in the future; refusing clock rollback")
 	}
@@ -198,6 +229,12 @@ func (e *Engine) Accept(ctx context.Context, envelope protocol.SignedSnapshot) (
 		e.status.InvalidSnapshots++
 		return protocol.Acknowledgement{}, err
 	}
+	if !e.protectionAllowsNew(now) && !e.onlyExisting(signed.Decisions, now) {
+		err := errors.New("fleet never-ban protection missing or stale; new bans refused")
+		e.setError(err)
+		e.status.RejectedProtectionStale++
+		return ack(e.options, signed.Revision, protocol.StateRejected, protocol.ReasonProtectionStale), err
+	}
 	if err := e.options.Policy.CheckCandidate(signed, e.options.Audience, now, e.options.ManagementPrefixLookup); err != nil {
 		e.setError(err)
 		e.status.RejectedScopes++
@@ -234,6 +271,11 @@ func (e *Engine) Accept(ctx context.Context, envelope protocol.SignedSnapshot) (
 	}
 	e.persisted = next
 	e.snapshot = &signed
+	for _, d := range signed.Decisions {
+		if e.protected(d) {
+			e.status.RejectedProtectedSource++ // withheld per entry in reconcile; rest still applies
+		}
+	}
 	e.status.Revision = signed.Revision
 	e.status.OfflineExpired = false
 	e.status.LastAcceptedAt = now
@@ -245,6 +287,9 @@ func (e *Engine) Accept(ctx context.Context, envelope protocol.SignedSnapshot) (
 	return e.appliedAck(), nil
 }
 func (e *Engine) appliedAck() protocol.Acknowledgement {
+	if e.status.ProtectedWithheld > 0 {
+		return ack(e.options, e.persisted.Revision, protocol.StatePartial, protocol.ReasonProtectedSource)
+	}
 	state := protocol.StateValidated
 	if e.options.Mode == "enforce" {
 		state = protocol.StateApplied
@@ -272,16 +317,26 @@ func (e *Engine) reconcile(ctx context.Context) error {
 	now := e.options.Now()
 	desired := make([]protocol.Decision, 0)
 	valid := e.snapshot != nil && e.snapshot.ExpiresAt.After(now) && e.persisted.AcceptedAt.Add(e.options.MaxOfflineAge).After(now)
-	if valid {
-		desired = append(desired, prune(e.snapshot.Decisions, now)...)
+	allowed := e.protectionAllowsExisting(now)
+	e.status.ProtectionFresh = e.protectionFresh(now)
+	e.status.ProtectionStale = e.options.NeverBanRequired && !e.status.ProtectionFresh
+	e.status.ProtectedWithheld = 0
+	if valid && allowed {
+		desired, e.status.ProtectedWithheld = e.withholdProtected(prune(e.snapshot.Decisions, now))
 		e.status.CentralDecisions = len(desired)
-	} else if e.persisted.Revision > 0 {
+	} else {
 		e.status.CentralDecisions = 0
-		e.status.OfflineExpired = true
+		if e.persisted.Revision > 0 && !valid {
+			e.status.OfflineExpired = true
+		}
 	}
 	localIDs := make([]string, 0, len(e.local))
 	for id, d := range e.local {
-		if !d.ExpiresAt.After(now) {
+		// Drop protected locals outright so they can never be restored.
+		if !d.ExpiresAt.After(now) || !allowed || e.protected(d) {
+			if e.protected(d) && e.applied[id] {
+				e.status.ProtectionRemovals++
+			}
 			delete(e.local, id)
 			continue
 		}
@@ -355,6 +410,19 @@ func (e *Engine) reconcile(ctx context.Context) error {
 		e.setError(err)
 		return err
 	}
+	// Confirm cleanup from backend readback, not from intent.
+	e.applied = make(map[string]bool, len(applied.Decisions))
+	for _, d := range applied.Decisions {
+		e.applied[d.ID] = true
+		if e.protected(d) {
+			e.status.ProtectionCleanupFailures++
+			err = errors.New("backend still reports a ban overlapping fleet protection")
+		}
+	}
+	if err != nil {
+		e.setError(err)
+		return err
+	}
 	e.status.ActiveDecisions = len(applied.Decisions)
 	e.status.LocallyJustified = len(e.local)
 	e.status.LastReconcile = now
@@ -385,6 +453,14 @@ func (e *Engine) AddLocal(ctx context.Context, d protocol.Decision, proof protoc
 	d.ID = "local-" + d.ID
 	if _, ok := e.local[d.ID]; ok {
 		return errors.New("duplicate local decision ID")
+	}
+	if !e.protectionAllowsNew(now) {
+		e.status.RejectedProtectionStale++
+		return errors.New("fleet never-ban protection missing or stale; local ban refused")
+	}
+	if e.protected(d) {
+		e.status.RejectedProtectedSource++
+		return errors.New("local ban source overlaps fleet never-ban protection")
 	}
 	synthetic := protocol.Snapshot{Schema: protocol.SchemaVersion, Revision: 1, IssuedAt: now, ExpiresAt: now.Add(protocol.MaxSnapshotTTL),
 		Audience: e.options.Audience, Decisions: []protocol.Decision{d}, KeyID: "local-reconciled"}

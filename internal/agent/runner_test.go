@@ -150,6 +150,22 @@ func TestConfigStrictModes(t *testing.T) {
 	if err := invalid.Validate(); err == nil {
 		t.Fatal("cleartext HTTP accepted")
 	}
+	for name, mutate := range map[string]func(*RuntimeConfig){
+		"required without anchor": func(c *RuntimeConfig) { c.NeverBanRequired = true },
+		"shared keys file":        func(c *RuntimeConfig) { c.NeverBanKeysFile = c.TrustedKeysFile },
+		"relative anchor":         func(c *RuntimeConfig) { c.NeverBanKeysFile = "never-ban.json" },
+	} {
+		invalid = valid
+		mutate(&invalid)
+		if err := invalid.Validate(); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+	ok := valid
+	ok.NeverBanKeysFile, ok.NeverBanRequired = "/tmp/never-ban.json", true
+	if err := ok.Validate(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestSensorEvidenceSubmissionViaPinnedTLS(t *testing.T) {

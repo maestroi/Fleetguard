@@ -63,9 +63,7 @@ func (t *Transport) request(ctx context.Context, method, path string, body []byt
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+t.token)
-	req.Header.Set("X-Fleetguard-Node-ID", t.node)
-	req.Header.Set("Accept", "application/json")
+	t.authorize(req)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -89,6 +87,47 @@ func (t *Transport) request(ctx context.Context, method, path string, body []byt
 		return nil, errors.New("controller response exceeds bound")
 	}
 	return content, nil
+}
+func (t *Transport) authorize(req *http.Request) {
+	req.Header.Set("Authorization", "Bearer "+t.token)
+	req.Header.Set("X-Fleetguard-Node-ID", t.node)
+	req.Header.Set("Accept", "application/json")
+}
+
+// FetchNeverBan retrieves the fleet-wide protection list (no group query; the
+// endpoint is fleet-wide). Callers must send etag only for a document they
+// have already verified and persisted. The result is still untrusted until
+// Engine.AcceptNeverBan verifies its signature against the separate anchor.
+func (t *Transport) FetchNeverBan(ctx context.Context, etag string) (env protocol.SignedNeverBanList, newETag string, notModified bool, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.base+"/v1/never-ban", nil)
+	if err != nil {
+		return env, "", false, err
+	}
+	t.authorize(req)
+	if etag != "" {
+		req.Header.Set("If-None-Match", etag)
+	}
+	resp, err := t.http.Do(req)
+	if err != nil {
+		return env, "", false, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusNotModified:
+		return env, etag, true, nil
+	case http.StatusOK:
+	default:
+		return env, "", false, fmt.Errorf("controller /v1/never-ban: HTTP %d", resp.StatusCode)
+	}
+	content, err := io.ReadAll(io.LimitReader(resp.Body, protocol.MaxNeverBanWireBytes+1))
+	if err != nil {
+		return env, "", false, err
+	}
+	if len(content) > protocol.MaxNeverBanWireBytes {
+		return env, "", false, errors.New("never-ban response exceeds bound")
+	}
+	env, err = protocol.DecodeSignedNeverBanList(content)
+	return env, resp.Header.Get("ETag"), false, err
 }
 func (t *Transport) Fetch(ctx context.Context) (protocol.SignedSnapshot, error) {
 	wire, err := t.request(ctx, "GET", "/v1/snapshot", nil)
